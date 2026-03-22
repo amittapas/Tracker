@@ -118,13 +118,42 @@ def end_sleep(session_id: int):
 def load_sleep_data() -> pd.DataFrame:
     with get_conn() as conn:
         df = pd.read_sql(
-            "SELECT sleep_at, wake_at, duration_hrs FROM sleep_log WHERE wake_at IS NOT NULL ORDER BY sleep_at DESC",
+            """
+            SELECT sl.id, sl.sleep_at, sl.wake_at, sl.duration_hrs,
+                   COALESCE(d.disturbances, 0) AS disturbances
+            FROM sleep_log sl
+            LEFT JOIN (
+                SELECT sleep_log_id, COUNT(*) AS disturbances
+                FROM sleep_disturbance GROUP BY sleep_log_id
+            ) d ON d.sleep_log_id = sl.id
+            WHERE sl.wake_at IS NOT NULL
+            ORDER BY sl.sleep_at DESC
+            """,
             conn,
         )
     if not df.empty:
         df["sleep_at"] = pd.to_datetime(df["sleep_at"]).dt.tz_convert(TIMEZONE)
         df["wake_at"] = pd.to_datetime(df["wake_at"]).dt.tz_convert(TIMEZONE)
     return df
+
+
+def log_disturbance(session_id: int, note: str = ""):
+    now = datetime.now(TIMEZONE)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO sleep_disturbance (sleep_log_id, disturbed_at, note) VALUES (%s, %s, %s)",
+                (session_id, now, note or None),
+            )
+        conn.commit()
+    return now
+
+
+def get_disturbance_count(session_id: int) -> int:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM sleep_disturbance WHERE sleep_log_id = %s", (session_id,))
+            return cur.fetchone()[0]
 
 
 def delete_sleep_row(sleep_at_val):
@@ -261,21 +290,34 @@ with tab_sleep:
     st.subheader("Sleep Tracker")
     st.caption(f"Current time: **{now.strftime('%b %d, %Y  %-I:%M %p')}**")
 
-    col_sleep, col_wake = st.columns(2)
+    if open_session:
+        sleep_at = open_session[1]
+        if sleep_at.tzinfo is None:
+            sleep_at = pytz.utc.localize(sleep_at).astimezone(TIMEZONE)
+        elapsed = (now - sleep_at).total_seconds() / 3600
+        dist_count = get_disturbance_count(open_session[0])
+        dist_label = f" — {dist_count} disturbance{'s' if dist_count != 1 else ''}" if dist_count else ""
+        st.info(f"Sleeping since **{fmt_time(sleep_at)}** ({fmt_duration(elapsed)} ago){dist_label}")
+
+    col_sleep, col_disturb, col_wake = st.columns(3)
 
     with col_sleep:
         if open_session:
-            sleep_at = open_session[1]
-            if sleep_at.tzinfo is None:
-                sleep_at = pytz.utc.localize(sleep_at).astimezone(TIMEZONE)
-            elapsed = (now - sleep_at).total_seconds() / 3600
-            st.info(f"Sleeping since **{fmt_time(sleep_at)}** ({fmt_duration(elapsed)} ago)")
             st.button("Going to sleep", disabled=True, use_container_width=True, key="sleep_btn")
         else:
             if st.button("🌙 Going to sleep", type="primary", use_container_width=True, key="sleep_btn"):
                 ts = start_sleep()
                 st.success(f"Sleep started at {fmt_time(ts)}. Good night!")
                 st.rerun()
+
+    with col_disturb:
+        if open_session:
+            if st.button("⚡ Disturbance", use_container_width=True, key="disturb_btn"):
+                ts = log_disturbance(open_session[0])
+                st.warning(f"Disturbance logged at {fmt_time(ts)}.")
+                st.rerun()
+        else:
+            st.button("Disturbance", disabled=True, use_container_width=True, key="disturb_btn")
 
     with col_wake:
         if open_session:
@@ -285,7 +327,6 @@ with tab_sleep:
                 st.rerun()
         else:
             st.button("Waking up", disabled=True, use_container_width=True, key="wake_btn")
-            st.caption("Start a sleep session first.")
 
     # ── Sleep stats ───────────────────────────────────────────────────────────
     sleep_df = load_sleep_data()
@@ -309,11 +350,15 @@ with tab_sleep:
         avg_wake_m = int(avg_wake_minutes % 60)
         avg_waketime_str = datetime(2000, 1, 1, avg_wake_h, avg_wake_m).strftime("%-I:%M %p")
 
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Avg Sleep Duration", fmt_duration(avg_duration))
+        avg_disturbances = sleep_df["disturbances"].mean()
+        undisturbed_nights = (sleep_df["disturbances"] == 0).sum()
+
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("Avg Duration", fmt_duration(avg_duration))
         m2.metric("Avg Bedtime", avg_bedtime_str)
         m3.metric("Avg Wake Time", avg_waketime_str)
-        m4.metric("Total Nights", str(len(sleep_df)))
+        m4.metric("Avg Disturbances", f"{avg_disturbances:.1f}/night")
+        m5.metric("Undisturbed Nights", f"{undisturbed_nights}/{len(sleep_df)}")
 
         # ── Last 7 days ──────────────────────────────────────────────────────
         week_ago = now - timedelta(days=7)
@@ -321,17 +366,18 @@ with tab_sleep:
 
         if len(recent) >= 2:
             st.markdown("#### Last 7 Days")
-            r1, r2, r3 = st.columns(3)
+            r1, r2, r3, r4 = st.columns(4)
 
             recent_avg = recent["duration_hrs"].mean()
             best = recent["duration_hrs"].max()
             worst = recent["duration_hrs"].min()
+            recent_dist = recent["disturbances"].sum()
 
             r1.metric("Avg Duration", fmt_duration(recent_avg))
             r2.metric("Best Night", fmt_duration(best))
             r3.metric("Worst Night", fmt_duration(worst))
+            r4.metric("Total Disturbances", str(int(recent_dist)))
 
-            # consistency score: low std dev = high consistency
             if len(recent) >= 3:
                 std = recent["duration_hrs"].std()
                 if std < 0.5:
@@ -348,24 +394,59 @@ with tab_sleep:
         st.markdown("#### Insights")
 
         tips = []
-        if avg_duration < 7:
-            tips.append("You're averaging **under 7 hours**. Adults need 7-9 hours for optimal recovery.")
+
+        # Duration
+        if avg_duration < 6:
+            tips.append("🔴 You're averaging **under 6 hours** — this is seriously low. Chronic sleep deprivation impacts memory, immunity, and mood.")
+        elif avg_duration < 7:
+            tips.append("🟡 You're averaging **under 7 hours**. Most adults need 7-9 hours. Even 30 extra minutes can make a difference.")
         elif avg_duration > 9:
-            tips.append("You're sleeping **over 9 hours** on average. Oversleeping can cause grogginess — try setting a consistent alarm.")
+            tips.append("🟡 You're averaging **over 9 hours**. Oversleeping can cause grogginess — try a consistent alarm.")
         else:
-            tips.append("Your average sleep duration is in the **healthy 7-9 hour range**. Keep it up!")
+            tips.append("🟢 Your average sleep duration is in the **healthy 7-9 hour range**.")
 
+        # Bedtime
         if avg_bed_h >= 0 and avg_bed_h < 12:
-            tips.append(f"Your average bedtime is **{avg_bedtime_str}** — that's quite late. Try moving it 30 minutes earlier each week.")
-        elif avg_bed_h >= 22 or avg_bed_h < 0:
-            tips.append(f"Your average bedtime is **{avg_bedtime_str}** — solid. A consistent pre-midnight bedtime supports deep sleep.")
+            tips.append(f"🟡 Average bedtime is **{avg_bedtime_str}** — that's past midnight. Try moving it 30 min earlier each week.")
+        elif avg_bed_h >= 22:
+            tips.append(f"🟢 Average bedtime is **{avg_bedtime_str}** — a pre-midnight bedtime supports deep sleep cycles.")
 
+        # Wake time
+        if avg_wake_h >= 10:
+            tips.append(f"🟡 Average wake time is **{avg_waketime_str}**. Late wake times can shift your circadian rhythm. Try getting morning sunlight.")
+        elif avg_wake_h <= 5:
+            tips.append(f"🟡 Average wake time is **{avg_waketime_str}** — very early. Make sure you're getting enough total hours.")
+
+        # Consistency
         if len(sleep_df) >= 3:
             bed_std = sleep_df["sleep_at"].apply(
                 lambda t: t.hour * 60 + t.minute if t.hour >= 12 else (t.hour + 24) * 60 + t.minute
             ).std()
-            if bed_std > 60:
-                tips.append("Your bedtime varies by **over an hour** day to day. A consistent schedule helps your circadian rhythm.")
+            if bed_std > 90:
+                tips.append("🔴 Your bedtime varies by **over 90 minutes**. Irregular schedules disrupt your circadian rhythm significantly.")
+            elif bed_std > 60:
+                tips.append("🟡 Your bedtime varies by **over an hour**. Try to keep it within a 30-minute window each night.")
+            else:
+                tips.append("🟢 Your bedtime is **consistent** — great for your circadian rhythm.")
+
+        # Disturbances
+        if avg_disturbances >= 3:
+            tips.append("🔴 You're averaging **3+ disturbances per night**. Consider: room temperature, noise, screen time before bed, caffeine after 2pm.")
+        elif avg_disturbances >= 1.5:
+            tips.append("🟡 You're averaging **1-2 disturbances per night**. Track patterns — is it noise, bathroom, stress? Identifying the cause is half the fix.")
+        elif avg_disturbances > 0:
+            tips.append("🟢 Disturbances are **low** — your sleep environment seems to be working well.")
+        else:
+            tips.append("🟢 **Zero disturbances** — you're sleeping through the night consistently.")
+
+        # Disturbed vs undisturbed quality
+        if len(sleep_df) >= 5:
+            disturbed = sleep_df[sleep_df["disturbances"] > 0]
+            clean = sleep_df[sleep_df["disturbances"] == 0]
+            if len(disturbed) >= 2 and len(clean) >= 2:
+                diff = clean["duration_hrs"].mean() - disturbed["duration_hrs"].mean()
+                if diff > 0.5:
+                    tips.append(f"📊 You sleep **{fmt_duration(diff)} longer** on undisturbed nights. Reducing disturbances = more sleep.")
 
         for tip in tips:
             st.markdown(f"- {tip}")
@@ -379,7 +460,8 @@ with tab_sleep:
         log_display["Bedtime"] = log_display["sleep_at"].apply(fmt_time)
         log_display["Wake Time"] = log_display["wake_at"].apply(fmt_time)
         log_display["Duration"] = log_display["duration_hrs"].apply(fmt_duration)
-        log_display = log_display[["Night of", "Bedtime", "Wake Time", "Duration"]].reset_index(drop=True)
+        log_display["Disturbances"] = log_display["disturbances"].astype(int)
+        log_display = log_display[["Night of", "Bedtime", "Wake Time", "Duration", "Disturbances"]].reset_index(drop=True)
         log_display.index = log_display.index + 1
         st.dataframe(log_display, use_container_width=True)
 
