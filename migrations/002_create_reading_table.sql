@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS reading (
+    id SERIAL PRIMARY KEY,
+    date DATE NOT NULL,
+    book TEXT NOT NULL,
+    end_page INTEGER NOT NULL DEFAULT 0
+);

@@ -128,6 +128,78 @@ def _static_sleep_lines_fig(dates, daily, avg_7d):
     return fig
 
 
+# ── Reading DB helpers ────────────────────────────────────────────────────────
+
+def load_reading_data() -> pd.DataFrame:
+    with get_conn() as conn:
+        df = pd.read_sql(
+            "SELECT date, book, end_page FROM reading ORDER BY date, book",
+            conn,
+        )
+    if not df.empty:
+        df["date"] = pd.to_datetime(df["date"]).dt.date
+    return df
+
+
+def insert_reading_row(entry: dict):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO reading (date, book, end_page)
+                VALUES (%(date)s, %(book)s, %(end_page)s)
+                """,
+                entry,
+            )
+        conn.commit()
+
+
+def delete_reading_row(row_id: int):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM reading WHERE id = %s", (row_id,))
+        conn.commit()
+
+
+def load_reading_data_with_id() -> pd.DataFrame:
+    with get_conn() as conn:
+        df = pd.read_sql(
+            "SELECT id, date, book, end_page FROM reading ORDER BY date DESC, book",
+            conn,
+        )
+    if not df.empty:
+        df["date"] = pd.to_datetime(df["date"]).dt.date
+    return df
+
+
+def compute_pages_per_day() -> pd.DataFrame:
+    """For each book, compute pages read per day using the difference in end_page between consecutive entries."""
+    with get_conn() as conn:
+        df = pd.read_sql(
+            "SELECT date, book, end_page FROM reading ORDER BY book, date",
+            conn,
+        )
+    if df.empty:
+        return pd.DataFrame(columns=["date", "pages"])
+    df["date"] = pd.to_datetime(df["date"]).dt.date
+    df["end_page"] = pd.to_numeric(df["end_page"], errors="coerce").astype("float64")
+
+    rows = []
+    for _, group in df.groupby("book"):
+        group = group.sort_values("date")
+        pages_read = group["end_page"].diff()
+        for d, p in zip(group["date"], pages_read):
+            if pd.notna(p) and p >= 0:
+                rows.append({"date": d, "pages": p})
+
+    if not rows:
+        return pd.DataFrame(columns=["date", "pages"])
+    result = pd.DataFrame(rows)
+    result = result.groupby("date", as_index=False)["pages"].sum()
+    result = result.sort_values("date")
+    return result
+
+
 # ── Sleep DB helpers ──────────────────────────────────────────────────────────
 
 def get_open_sleep_session():
@@ -318,6 +390,53 @@ def render_health_section():
             m5.metric("Avg Steps", f"{current_week['steps'].mean():.0f}")
 
 
+def render_reading_section():
+    st.subheader("Reading Log")
+
+    with st.expander("**Log a reading session**", expanded=True):
+        row1 = st.columns([2, 1.5, 0.6])
+        with row1[0]:
+            book = st.text_input("Book title", key="reading_book")
+        with row1[1]:
+            end_page = st.number_input("End page", min_value=0, max_value=99999, value=0, step=1, key="reading_end_page")
+        with row1[2]:
+            st.markdown("<br>", unsafe_allow_html=True)
+            add_btn = st.button("Add", type="primary", use_container_width=True, key="reading_add")
+
+        reading_date = st.date_input("Date", value=date.today(), key="reading_date")
+
+        if add_btn:
+            if not book.strip():
+                st.warning("Please enter a book title.")
+            else:
+                insert_reading_row({
+                    "date": str(reading_date),
+                    "book": book.strip(),
+                    "end_page": int(end_page),
+                })
+                st.success(f"Logged **{book.strip()}** — page {end_page} on {reading_date}.")
+                st.rerun()
+
+    rdf = load_reading_data_with_id()
+
+    if rdf.empty:
+        st.info("No reading entries yet. Log your first session above!")
+    else:
+        display_df = rdf[["date", "book", "end_page"]].copy()
+        display_df.columns = ["Date", "Book", "End Page"]
+        display_df.index = range(1, len(display_df) + 1)
+        st.dataframe(display_df, use_container_width=True, height=min(len(display_df) * 40 + 60, 500))
+
+        with st.expander("Delete an entry"):
+            del_options = rdf.apply(
+                lambda r: f"{r['date'].strftime('%Y-%m-%d')} — {r['book']} (p.{r['end_page']})", axis=1
+            ).tolist()
+            del_idx = st.selectbox("Select entry to delete", range(len(del_options)), format_func=lambda i: del_options[i], key="reading_del")
+            if st.button("Delete", type="secondary", key="reading_del_btn"):
+                delete_reading_row(int(rdf.iloc[del_idx]["id"]))
+                st.rerun()
+
+
 def render_graphs_section():
     gdf = load_health_data()
     st.header("Trends")
@@ -345,9 +464,17 @@ def render_graphs_section():
             avg7 = chart_df["sleep"].rolling(7, min_periods=1).mean()
             st.pyplot(_static_sleep_lines_fig(dates, chart_df["sleep"], avg7), clear_figure=True)
 
-        g5, _ = st.columns(2)
+        g5, g6 = st.columns(2)
         with g5:
             st.pyplot(_static_line_fig(dates, chart_df["steps"], color="#ca8a04", title="Steps"), clear_figure=True)
+
+        ppd = compute_pages_per_day()
+        with g6:
+            if ppd.empty:
+                st.caption("Log reading sessions (at least two entries per book) to see pages/day.")
+            else:
+                ppd_dates = pd.to_datetime(ppd["date"])
+                st.pyplot(_static_line_fig(ppd_dates, ppd["pages"], color="#be185d", title="Pages Read / Day"), clear_figure=True)
 
 
 def render_sleep_section():
@@ -495,6 +622,7 @@ pg = st.navigation(
         "Tracker": [
             st.Page(render_health_section, title="Health", icon=":material/favorite:"),
             st.Page(render_sleep_section, title="Sleep", icon=":material/bedtime:"),
+            st.Page(render_reading_section, title="Reading", icon=":material/menu_book:"),
             st.Page(render_graphs_section, title="Trends", icon=":material/bar_chart:"),
         ],
     }
