@@ -1,4 +1,5 @@
 streamlit
+streamlit-option-menu
 pandas
 psycopg2-binary
 pytz

@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import psycopg2
 import matplotlib.pyplot as plt
+from streamlit_option_menu import option_menu
 from datetime import date, datetime, timedelta
 import pytz
 
@@ -213,7 +214,7 @@ def fmt_duration(hrs):
     return f"{h}h {m}m"
 
 
-NAV_OPTIONS = ["🏋️ Health", "😴 Sleep", "📈 Graphs"]
+NAV_OPTIONS = ["Health", "Sleep", "Graphs"]
 
 
 def render_health_section():
@@ -506,18 +507,44 @@ st.markdown(
 
 st.title("Tracker")
 
-nav_col, main_col = st.columns([1.2, 4.8], gap="large")
+nav_col, main_col = st.columns([1.35, 4.65], gap="large")
 
 with nav_col:
     with st.container(border=True):
         st.markdown("### Sections")
-        st.caption("Choose a view")
-        section = st.radio(
-            "Navigation",
-            NAV_OPTIONS,
-            label_visibility="collapsed",
-            key="nav_radio",
-            horizontal=False,
+        st.caption("Move between tracker views")
+        default_index = NAV_OPTIONS.index(st.session_state.get("nav_menu", NAV_OPTIONS[0]))
+        section = option_menu(
+            menu_title=None,
+            options=NAV_OPTIONS,
+            icons=["heart-pulse", "moon-stars", "bar-chart-line"],
+            default_index=default_index,
+            orientation="vertical",
+            key="nav_menu",
+            styles={
+                "container": {
+                    "padding": "0",
+                    "background-color": "transparent",
+                },
+                "icon": {
+                    "color": "#2563eb",
+                    "font-size": "18px",
+                },
+                "nav-link": {
+                    "font-size": "16px",
+                    "font-weight": "600",
+                    "text-align": "left",
+                    "margin": "0 0 8px 0",
+                    "padding": "12px 14px",
+                    "border-radius": "12px",
+                    "color": "#1f2937",
+                    "--hover-color": "#eef4ff",
+                },
+                "nav-link-selected": {
+                    "background-color": "#2563eb",
+                    "color": "white",
+                },
+            },
         )
 
 with main_col:
