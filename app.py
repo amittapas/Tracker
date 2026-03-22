@@ -293,7 +293,8 @@ with tab_sleep:
     if open_session:
         sleep_at = open_session[1]
         if sleep_at.tzinfo is None:
-            sleep_at = pytz.utc.localize(sleep_at).astimezone(TIMEZONE)
+            sleep_at = pytz.utc.localize(sleep_at)
+        sleep_at = sleep_at.astimezone(TIMEZONE)
         elapsed = (now - sleep_at).total_seconds() / 3600
         dist_count = get_disturbance_count(open_session[0])
         dist_label = f" — {dist_count} disturbance{'s' if dist_count != 1 else ''}" if dist_count else ""
