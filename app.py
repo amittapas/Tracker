@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import psycopg2
+import matplotlib.pyplot as plt
 from datetime import date, datetime, timedelta
 import pytz
 
@@ -78,6 +79,40 @@ def compute_weekly_averages(df: pd.DataFrame) -> pd.DataFrame:
     )
     weekly = weekly.sort_values("week_start", ascending=False)
     return weekly[["week", "days_logged", "weight", "protein", "calories", "sleep"]]
+
+
+def _static_line_fig(dates, y, *, color="#2563eb"):
+    fig, ax = plt.subplots(figsize=(5.2, 2.8))
+    if len(dates) <= 25:
+        ax.plot(dates, y, color=color, linewidth=2, marker="o", markersize=4)
+    else:
+        ax.plot(dates, y, color=color, linewidth=2)
+    ax.set_facecolor("#fafafa")
+    ax.grid(True, alpha=0.35)
+    ax.tick_params(axis="x", labelsize=9)
+    ax.tick_params(axis="y", labelsize=9)
+    fig.patch.set_facecolor("white")
+    fig.autofmt_xdate()
+    plt.tight_layout()
+    return fig
+
+
+def _static_sleep_lines_fig(dates, daily, avg_7d):
+    fig, ax = plt.subplots(figsize=(5.2, 2.8))
+    if len(dates) <= 25:
+        ax.plot(dates, daily, color="#2563eb", linewidth=2, marker="o", markersize=4, label="Daily")
+    else:
+        ax.plot(dates, daily, color="#2563eb", linewidth=2, label="Daily")
+    ax.plot(dates, avg_7d, color="#c2410c", linewidth=2, label="7-day avg")
+    ax.legend(loc="best", fontsize=8)
+    ax.set_facecolor("#fafafa")
+    ax.grid(True, alpha=0.35)
+    ax.tick_params(axis="x", labelsize=9)
+    ax.tick_params(axis="y", labelsize=9)
+    fig.patch.set_facecolor("white")
+    fig.autofmt_xdate()
+    plt.tight_layout()
+    return fig
 
 
 # ── Sleep DB helpers ──────────────────────────────────────────────────────────
@@ -295,29 +330,24 @@ with tab_graphs:
         for col in ("weight", "protein", "calories", "sleep"):
             chart_df[col] = pd.to_numeric(chart_df[col], errors="coerce").astype("float64")
 
+        dates = chart_df["date"]
         g1, g2 = st.columns(2)
         with g1:
             st.markdown("**Weight (kg)**")
-            st.line_chart(chart_df, x="date", y="weight", height=220)
+            st.pyplot(_static_line_fig(dates, chart_df["weight"]), clear_figure=True)
         with g2:
             st.markdown("**Protein (g)**")
-            st.line_chart(chart_df, x="date", y="protein", height=220)
+            st.pyplot(_static_line_fig(dates, chart_df["protein"], color="#7c3aed"), clear_figure=True)
 
         g3, g4 = st.columns(2)
         with g3:
             st.markdown("**Calories**")
-            st.line_chart(chart_df, x="date", y="calories", height=220)
+            st.pyplot(_static_line_fig(dates, chart_df["calories"], color="#059669"), clear_figure=True)
         with g4:
             st.markdown("**Sleep (hrs)**")
             st.caption("Daily logged hours and 7-day rolling average.")
-            sleep_plot = pd.DataFrame(
-                {
-                    "date": chart_df["date"],
-                    "Daily": chart_df["sleep"],
-                    "7-day avg": chart_df["sleep"].rolling(7, min_periods=1).mean(),
-                }
-            )
-            st.line_chart(sleep_plot, x="date", y=["Daily", "7-day avg"], height=220)
+            avg7 = chart_df["sleep"].rolling(7, min_periods=1).mean()
+            st.pyplot(_static_sleep_lines_fig(dates, chart_df["sleep"], avg7), clear_figure=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SLEEP TAB
