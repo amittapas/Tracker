@@ -23,7 +23,10 @@ def get_conn():
 
 def load_health_data() -> pd.DataFrame:
     with get_conn() as conn:
-        df = pd.read_sql("SELECT date, weight, protein, calories, sleep FROM health ORDER BY date", conn)
+        df = pd.read_sql(
+            "SELECT date, weight, protein, calories, sleep, steps FROM health ORDER BY date",
+            conn,
+        )
     if not df.empty:
         df["date"] = pd.to_datetime(df["date"]).dt.date
     return df
@@ -34,13 +37,14 @@ def upsert_health_row(entry: dict):
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO health (date, weight, protein, calories, sleep)
-                VALUES (%(date)s, %(weight)s, %(protein)s, %(calories)s, %(sleep)s)
+                INSERT INTO health (date, weight, protein, calories, sleep, steps)
+                VALUES (%(date)s, %(weight)s, %(protein)s, %(calories)s, %(sleep)s, %(steps)s)
                 ON CONFLICT (date) DO UPDATE SET
                     weight = EXCLUDED.weight,
                     protein = EXCLUDED.protein,
                     calories = EXCLUDED.calories,
-                    sleep = EXCLUDED.sleep
+                    sleep = EXCLUDED.sleep,
+                    steps = EXCLUDED.steps
                 """,
                 entry,
             )
@@ -70,6 +74,7 @@ def compute_weekly_averages(df: pd.DataFrame) -> pd.DataFrame:
             protein=("protein", "mean"),
             calories=("calories", "mean"),
             sleep=("sleep", "mean"),
+            steps=("steps", "mean"),
             days_logged=("date", "count"),
         )
         .reset_index()
@@ -78,7 +83,7 @@ def compute_weekly_averages(df: pd.DataFrame) -> pd.DataFrame:
         lambda r: f"{r['week_start'].strftime('%b %d')} – {r['week_end'].strftime('%b %d')}", axis=1
     )
     weekly = weekly.sort_values("week_start", ascending=False)
-    return weekly[["week", "days_logged", "weight", "protein", "calories", "sleep"]]
+    return weekly[["week", "days_logged", "weight", "protein", "calories", "sleep", "steps"]]
 
 
 def _static_line_fig(dates, y, *, color="#2563eb"):
@@ -237,7 +242,7 @@ with tab_health:
     df = load_health_data()
 
     with st.expander("**Add new entry**", expanded=True):
-        cols = st.columns([1.5, 1, 1, 1, 1, 0.8])
+        cols = st.columns([1.5, 1, 1, 1, 1, 1, 0.8])
         with cols[0]:
             entry_date = st.date_input("Date", value=date.today(), key="health_date")
         with cols[1]:
@@ -249,6 +254,8 @@ with tab_health:
         with cols[4]:
             sleep = st.number_input("Sleep (hrs)", min_value=0.0, max_value=24.0, value=7.5, step=0.25, key="health_sleep")
         with cols[5]:
+            steps = st.number_input("Steps (day)", min_value=0, max_value=100000, value=0, step=100, key="health_steps")
+        with cols[6]:
             st.markdown("<br>", unsafe_allow_html=True)
             add_btn = st.button("Add", type="primary", use_container_width=True, key="health_add")
 
@@ -259,6 +266,7 @@ with tab_health:
                 "protein": protein,
                 "calories": calories,
                 "sleep": sleep,
+                "steps": int(steps),
             }
             upsert_health_row(entry)
             st.success(f"Saved entry for {entry_date}.")
@@ -271,7 +279,7 @@ with tab_health:
     else:
         display_df = df.sort_values("date", ascending=False).reset_index(drop=True)
         display_df.index = display_df.index + 1
-        display_df.columns = ["Date", "Weight (kg)", "Protein (g)", "Calories", "Sleep (hrs)"]
+        display_df.columns = ["Date", "Weight (kg)", "Protein (g)", "Calories", "Sleep (hrs)", "Steps (day)"]
         st.dataframe(display_df, use_container_width=True, height=min(len(display_df) * 40 + 60, 500))
 
         with st.expander("Delete an entry"):
@@ -293,7 +301,16 @@ with tab_health:
     else:
         weekly = compute_weekly_averages(df)
         display_weekly = weekly.copy()
-        display_weekly.columns = ["Week", "Days Logged", "Avg Weight (kg)", "Avg Protein (g)", "Avg Calories", "Avg Sleep (hrs)"]
+        display_weekly["steps"] = display_weekly["steps"].round(0)
+        display_weekly.columns = [
+            "Week",
+            "Days Logged",
+            "Avg Weight (kg)",
+            "Avg Protein (g)",
+            "Avg Calories",
+            "Avg Sleep (hrs)",
+            "Avg Steps",
+        ]
         display_weekly.index = range(1, len(display_weekly) + 1)
         st.dataframe(display_weekly, use_container_width=True)
 
@@ -308,11 +325,12 @@ with tab_health:
 
         if not current_week.empty:
             st.markdown("#### This Week at a Glance")
-            m1, m2, m3, m4 = st.columns(4)
+            m1, m2, m3, m4, m5 = st.columns(5)
             m1.metric("Avg Weight", f"{current_week['weight'].mean():.1f} kg")
             m2.metric("Avg Protein", f"{current_week['protein'].mean():.0f} g")
             m3.metric("Avg Calories", f"{current_week['calories'].mean():.0f}")
             m4.metric("Avg Sleep", f"{current_week['sleep'].mean():.1f} hrs")
+            m5.metric("Avg Steps", f"{current_week['steps'].mean():.0f}")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # GRAPHS TAB
@@ -327,7 +345,7 @@ with tab_graphs:
         chart_df = gdf.copy()
         chart_df["date"] = pd.to_datetime(chart_df["date"])
         chart_df = chart_df.sort_values("date")
-        for col in ("weight", "protein", "calories", "sleep"):
+        for col in ("weight", "protein", "calories", "sleep", "steps"):
             chart_df[col] = pd.to_numeric(chart_df[col], errors="coerce").astype("float64")
 
         dates = chart_df["date"]
@@ -348,6 +366,9 @@ with tab_graphs:
             st.caption("Daily logged hours and 7-day rolling average.")
             avg7 = chart_df["sleep"].rolling(7, min_periods=1).mean()
             st.pyplot(_static_sleep_lines_fig(dates, chart_df["sleep"], avg7), clear_figure=True)
+
+        st.markdown("**Steps (day)**")
+        st.pyplot(_static_line_fig(dates, chart_df["steps"], color="#ca8a04"), clear_figure=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SLEEP TAB
