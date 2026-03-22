@@ -11,6 +11,7 @@ def get_conn():
         database=st.secrets["postgres"]["database"],
         user=st.secrets["postgres"]["user"],
         password=st.secrets["postgres"]["password"],
+        sslmode="require",
     )
 
 
