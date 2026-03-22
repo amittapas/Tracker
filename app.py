@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import psycopg2
 import matplotlib.pyplot as plt
-from streamlit_option_menu import option_menu
 from datetime import date, datetime, timedelta
 import pytz
 
@@ -220,9 +219,6 @@ def fmt_duration(hrs):
     h = int(hrs)
     m = int((hrs - h) * 60)
     return f"{h}h {m}m"
-
-
-NAV_OPTIONS = ["Health", "Sleep", "Graphs"]
 
 
 def render_health_section():
@@ -491,27 +487,23 @@ def render_sleep_section():
                 st.rerun()
 
 
-# ── Page config ───────────────────────────────────────────────────────────────
-st.set_page_config(page_title="Tracker", page_icon="📊", layout="wide")
+# ── Navigation & page config ──────────────────────────────────────────────────
+pg = st.navigation(
+    {
+        "Tracker": [
+            st.Page(render_health_section, title="Health", icon=":material/favorite:"),
+            st.Page(render_sleep_section, title="Sleep", icon=":material/bedtime:"),
+            st.Page(render_graphs_section, title="Trends", icon=":material/bar_chart:"),
+        ],
+    }
+)
+
+st.set_page_config(page_title="Tracker", page_icon=":material/monitoring:", layout="wide")
 
 st.markdown(
     """
     <style>
     .block-container { max-width: 1000px; padding-top: 2rem; }
-
-    /* sidebar styling */
-    section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
-        min-width: 220px;
-        max-width: 260px;
-    }
-    section[data-testid="stSidebar"] .stMarkdown h1,
-    section[data-testid="stSidebar"] .stMarkdown p,
-    section[data-testid="stSidebar"] .stCaption {
-        color: #e2e8f0 !important;
-    }
-
-    /* metric cards */
     div[data-testid="stMetric"] {
         background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
         border: 1px solid #e2e8f0;
@@ -521,61 +513,12 @@ st.markdown(
     }
     div[data-testid="stMetric"] label { color: #64748b !important; font-size: 13px !important; }
     div[data-testid="stMetric"] [data-testid="stMetricValue"] { color: #0f172a !important; }
-
-    /* dataframe container */
     .stDataFrame { border-radius: 12px; overflow: hidden; }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# ── Sidebar navigation ───────────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown("# 📊 Tracker")
-    st.caption("Your personal health dashboard")
-    st.markdown("---")
+st.logo(":material/monitoring:", size="large")
 
-    section = option_menu(
-        menu_title=None,
-        options=NAV_OPTIONS,
-        icons=["heart-pulse", "moon-stars", "bar-chart-line"],
-        default_index=0,
-        orientation="vertical",
-        key="nav_menu",
-        styles={
-            "container": {
-                "padding": "0",
-                "background-color": "transparent",
-            },
-            "icon": {
-                "color": "#94a3b8",
-                "font-size": "18px",
-            },
-            "nav-link": {
-                "font-size": "15px",
-                "font-weight": "500",
-                "text-align": "left",
-                "margin": "4px 0",
-                "padding": "12px 16px",
-                "border-radius": "10px",
-                "color": "#cbd5e1",
-                "--hover-color": "rgba(255,255,255,0.08)",
-            },
-            "nav-link-selected": {
-                "background-color": "#2563eb",
-                "color": "white",
-                "font-weight": "600",
-            },
-        },
-    )
-
-    st.markdown("---")
-    st.caption(f"Today: {date.today().strftime('%b %d, %Y')}")
-
-# ── Main content ──────────────────────────────────────────────────────────────
-if section == NAV_OPTIONS[0]:
-    render_health_section()
-elif section == NAV_OPTIONS[1]:
-    render_sleep_section()
-elif section == NAV_OPTIONS[2]:
-    render_graphs_section()
+pg.run()
