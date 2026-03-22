@@ -1,3 +1,4 @@
+import html
 import streamlit as st
 import pandas as pd
 import psycopg2
@@ -172,7 +173,7 @@ def load_reading_data_with_id() -> pd.DataFrame:
     return df
 
 
-# ── Goals (pushups, running, pages, steps, writing, passive income) ───────────
+# ── Goals (pushups, running, pages, steps, writing, fasting, passive income) ─
 
 GOAL_METRICS = {
     "pushups": {"label": "Pushups", "unit": "reps", "start": 15, "delta": 3, "format": "{:.0f}"},
@@ -180,6 +181,7 @@ GOAL_METRICS = {
     "pages": {"label": "Pages read (session goal)", "unit": "pages", "start": 10, "delta": 1, "format": "{:.0f}"},
     "steps": {"label": "Daily steps", "unit": "steps", "start": 5000, "delta": 100, "format": "{:.0f}"},
     "writing": {"label": "Writing", "unit": "words", "start": 100, "delta": 50, "format": "{:.0f}"},
+    "fasting": {"label": "Fasting", "unit": "hrs", "start": 3, "delta": 1, "format": "{:.0f}"},
     "passive_income": {"label": "Passive income (monthly)", "unit": "$", "start": 100, "delta": 10, "format": "{:.0f}"},
 }
 
@@ -250,6 +252,14 @@ def _fmt_goal_value(metric_key: str, val: float) -> str:
         return f"${val:.0f}"
     cfg = GOAL_METRICS[metric_key]
     return f"{cfg['format'].format(val)} {cfg['unit']}"
+
+
+def _goals_delta_caption(metric_key: str, cfg: dict) -> str:
+    if metric_key == "passive_income":
+        return f"On success: +${cfg['delta']:.0f}"
+    if metric_key == "fasting":
+        return f"On success: +{cfg['delta']:.0f} hr"
+    return f"On success: +{cfg['delta']:.0f} {cfg['unit']}"
 
 
 def compute_pages_per_day() -> pd.DataFrame:
@@ -518,36 +528,78 @@ def render_reading_section():
 
 
 def render_goals_section():
-    st.header("Goals")
-    st.caption(
-        "Each card shows your **next target** and **current max** (best level you locked in on Achieved). "
-        "**Achieved** increases the next target by the step. **Failed** leaves targets unchanged."
+    # Amber / teal “night mode” theme — HTML cards so we do not restyle global st.metric on other pages
+    st.markdown(
+        """
+        <div style="background: linear-gradient(135deg, #1c1917 0%, #292524 50%, #1c1917 100%);
+                    border: 1px solid rgba(245, 158, 11, 0.28);
+                    border-radius: 18px;
+                    padding: 1.4rem 1.6rem;
+                    margin-bottom: 1.35rem;
+                    box-shadow: 0 10px 40px rgba(0,0,0,0.4);">
+            <h2 style="margin:0; color:#fef3c7; font-family:system-ui,sans-serif; font-size:1.65rem;
+                       font-weight:700; letter-spacing:-0.02em;">Goals</h2>
+            <p style="margin:0.55rem 0 0 0; color:#a8a29e; font-size:0.92rem; line-height:1.5;">
+                <span style="color:#fcd34d;font-weight:600;">Achieved</span> bumps your next target.
+                <span style="color:#94a3b8;font-weight:600;">Failed</span> keeps it where it is.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
+
     goals = load_goals()
 
     for metric_key, cfg in GOAL_METRICS.items():
         g = goals.get(metric_key, {"current_target": cfg["start"], "max_achieved": 0.0})
         cur_t = g["current_target"]
         max_t = g["max_achieved"]
-        delta_note = f"+${cfg['delta']:.0f}/step" if metric_key == "passive_income" else f"+{cfg['delta']:.0f} {cfg['unit']}/step"
+        vt = html.escape(_fmt_goal_value(metric_key, cur_t))
+        vm = html.escape(_fmt_goal_value(metric_key, max_t))
+        lbl = html.escape(cfg["label"])
+        cap = html.escape(_goals_delta_caption(metric_key, cfg))
 
-        with st.container(border=True):
-            st.markdown(f"**{cfg['label']}**")
-            st.caption(delta_note)
-            m1, m2 = st.columns(2)
-            with m1:
-                st.metric("Next target", _fmt_goal_value(metric_key, cur_t))
-            with m2:
-                st.metric("Current max", _fmt_goal_value(metric_key, max_t))
-            b1, b2 = st.columns(2)
-            with b1:
-                if st.button("Achieved", type="primary", key=f"goal_ok_{metric_key}", use_container_width=True):
-                    apply_goal_success(metric_key)
-                    st.rerun()
-            with b2:
-                if st.button("Failed", key=f"goal_fail_{metric_key}", use_container_width=True):
-                    apply_goal_failure(metric_key)
-                    st.toast("Target unchanged.")
+        st.markdown(
+            f"""
+            <div style="background: linear-gradient(165deg, #292524 0%, #1c1917 100%);
+                        border: 1px solid rgba(20, 184, 166, 0.22);
+                        border-radius: 14px;
+                        padding: 0.95rem 1.15rem 1rem;
+                        margin-bottom: 0.35rem;
+                        box-shadow: 0 4px 18px rgba(0,0,0,0.35);">
+                <div style="color:#fcd34d; font-size:0.72rem; font-weight:700; text-transform:uppercase;
+                            letter-spacing:0.09em;">{lbl}</div>
+                <div style="color:#78716c; font-size:0.8rem; margin-top:0.3rem;">{cap}</div>
+                <div style="display:flex; gap:0.85rem; margin-top:0.85rem; flex-wrap:wrap;">
+                    <div style="flex:1; min-width:120px; background: rgba(15,23,42,0.5);
+                                border-radius: 10px; padding: 0.65rem 0.85rem;
+                                border: 1px solid rgba(245, 158, 11, 0.18);">
+                        <div style="color:#a8a29e; font-size:0.68rem; text-transform:uppercase;
+                                    letter-spacing:0.07em;">Next target</div>
+                        <div style="color:#fef3c7; font-size:1.28rem; font-weight:700; margin-top:0.15rem;">{vt}</div>
+                    </div>
+                    <div style="flex:1; min-width:120px; background: rgba(15,23,42,0.5);
+                                border-radius: 10px; padding: 0.65rem 0.85rem;
+                                border: 1px solid rgba(20, 184, 166, 0.22);">
+                        <div style="color:#a8a29e; font-size:0.68rem; text-transform:uppercase;
+                                    letter-spacing:0.07em;">Current max</div>
+                        <div style="color:#5eead4; font-size:1.28rem; font-weight:700; margin-top:0.15rem;">{vm}</div>
+                    </div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        b1, b2 = st.columns(2)
+        with b1:
+            if st.button("Achieved", type="primary", key=f"goal_ok_{metric_key}", use_container_width=True):
+                apply_goal_success(metric_key)
+                st.rerun()
+        with b2:
+            if st.button("Failed", key=f"goal_fail_{metric_key}", use_container_width=True):
+                apply_goal_failure(metric_key)
+                st.toast("Target unchanged.")
 
 
 def render_graphs_section():
