@@ -390,67 +390,6 @@ with tab_sleep:
                     consistency = "Poor"
                 st.metric("Sleep Consistency", consistency)
 
-        # ── Insights ──────────────────────────────────────────────────────────
-        st.markdown("#### Insights")
-
-        tips = []
-
-        # Duration
-        if avg_duration < 6:
-            tips.append("🔴 You're averaging **under 6 hours** — this is seriously low. Chronic sleep deprivation impacts memory, immunity, and mood.")
-        elif avg_duration < 7:
-            tips.append("🟡 You're averaging **under 7 hours**. Most adults need 7-9 hours. Even 30 extra minutes can make a difference.")
-        elif avg_duration > 9:
-            tips.append("🟡 You're averaging **over 9 hours**. Oversleeping can cause grogginess — try a consistent alarm.")
-        else:
-            tips.append("🟢 Your average sleep duration is in the **healthy 7-9 hour range**.")
-
-        # Bedtime
-        if avg_bed_h >= 0 and avg_bed_h < 12:
-            tips.append(f"🟡 Average bedtime is **{avg_bedtime_str}** — that's past midnight. Try moving it 30 min earlier each week.")
-        elif avg_bed_h >= 22:
-            tips.append(f"🟢 Average bedtime is **{avg_bedtime_str}** — a pre-midnight bedtime supports deep sleep cycles.")
-
-        # Wake time
-        if avg_wake_h >= 10:
-            tips.append(f"🟡 Average wake time is **{avg_waketime_str}**. Late wake times can shift your circadian rhythm. Try getting morning sunlight.")
-        elif avg_wake_h <= 5:
-            tips.append(f"🟡 Average wake time is **{avg_waketime_str}** — very early. Make sure you're getting enough total hours.")
-
-        # Consistency
-        if len(sleep_df) >= 3:
-            bed_std = sleep_df["sleep_at"].apply(
-                lambda t: t.hour * 60 + t.minute if t.hour >= 12 else (t.hour + 24) * 60 + t.minute
-            ).std()
-            if bed_std > 90:
-                tips.append("🔴 Your bedtime varies by **over 90 minutes**. Irregular schedules disrupt your circadian rhythm significantly.")
-            elif bed_std > 60:
-                tips.append("🟡 Your bedtime varies by **over an hour**. Try to keep it within a 30-minute window each night.")
-            else:
-                tips.append("🟢 Your bedtime is **consistent** — great for your circadian rhythm.")
-
-        # Disturbances
-        if avg_disturbances >= 3:
-            tips.append("🔴 You're averaging **3+ disturbances per night**. Consider: room temperature, noise, screen time before bed, caffeine after 2pm.")
-        elif avg_disturbances >= 1.5:
-            tips.append("🟡 You're averaging **1-2 disturbances per night**. Track patterns — is it noise, bathroom, stress? Identifying the cause is half the fix.")
-        elif avg_disturbances > 0:
-            tips.append("🟢 Disturbances are **low** — your sleep environment seems to be working well.")
-        else:
-            tips.append("🟢 **Zero disturbances** — you're sleeping through the night consistently.")
-
-        # Disturbed vs undisturbed quality
-        if len(sleep_df) >= 5:
-            disturbed = sleep_df[sleep_df["disturbances"] > 0]
-            clean = sleep_df[sleep_df["disturbances"] == 0]
-            if len(disturbed) >= 2 and len(clean) >= 2:
-                diff = clean["duration_hrs"].mean() - disturbed["duration_hrs"].mean()
-                if diff > 0.5:
-                    tips.append(f"📊 You sleep **{fmt_duration(diff)} longer** on undisturbed nights. Reducing disturbances = more sleep.")
-
-        for tip in tips:
-            st.markdown(f"- {tip}")
-
         # ── Sleep log table ───────────────────────────────────────────────────
         st.markdown("---")
         st.subheader("Sleep Log")
