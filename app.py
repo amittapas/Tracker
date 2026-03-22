@@ -4,7 +4,7 @@ import psycopg2
 from datetime import date, datetime, timedelta
 import pytz
 
-TIMEZONE = pytz.timezone("America/New_York")
+TIMEZONE = pytz.timezone("America/Los_Angeles")
 
 
 def get_conn():
