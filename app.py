@@ -1,65 +1,50 @@
 import streamlit as st
 import pandas as pd
-import gspread
-from google.oauth2.service_account import Credentials
-from datetime import date, datetime
-
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive",
-]
-
-SHEET_NAME = "Health"
+import psycopg2
+from datetime import date
 
 
-@st.cache_resource
-def get_gspread_client():
-    creds_dict = dict(st.secrets["gcp_service_account"])
-    creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-    return gspread.authorize(creds)
+def get_conn():
+    return psycopg2.connect(
+        host=st.secrets["postgres"]["host"],
+        port=st.secrets["postgres"]["port"],
+        database=st.secrets["postgres"]["database"],
+        user=st.secrets["postgres"]["user"],
+        password=st.secrets["postgres"]["password"],
+    )
 
 
-def get_or_create_worksheet(spreadsheet, title, headers):
-    try:
-        ws = spreadsheet.worksheet(title)
-    except gspread.WorksheetNotFound:
-        ws = spreadsheet.add_worksheet(title=title, rows=1000, cols=len(headers))
-        ws.append_row(headers)
-    return ws
-
-
-def load_health_data(ws) -> pd.DataFrame:
-    records = ws.get_all_records()
-    if not records:
-        return pd.DataFrame(columns=["date", "weight", "protein", "calories", "sleep"])
-    df = pd.DataFrame(records)
-    df["date"] = pd.to_datetime(df["date"]).dt.date
-    df["weight"] = pd.to_numeric(df["weight"], errors="coerce")
-    df["protein"] = pd.to_numeric(df["protein"], errors="coerce")
-    df["calories"] = pd.to_numeric(df["calories"], errors="coerce")
-    df["sleep"] = pd.to_numeric(df["sleep"], errors="coerce")
+def load_health_data() -> pd.DataFrame:
+    with get_conn() as conn:
+        df = pd.read_sql("SELECT date, weight, protein, calories, sleep FROM health ORDER BY date", conn)
+    if not df.empty:
+        df["date"] = pd.to_datetime(df["date"]).dt.date
     return df
 
 
-def save_health_row(ws, entry: dict):
-    ws.append_row([entry["date"], entry["weight"], entry["protein"], entry["calories"], entry["sleep"]])
+def upsert_health_row(entry: dict):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO health (date, weight, protein, calories, sleep)
+                VALUES (%(date)s, %(weight)s, %(protein)s, %(calories)s, %(sleep)s)
+                ON CONFLICT (date) DO UPDATE SET
+                    weight = EXCLUDED.weight,
+                    protein = EXCLUDED.protein,
+                    calories = EXCLUDED.calories,
+                    sleep = EXCLUDED.sleep
+                """,
+                entry,
+            )
+        conn.commit()
 
 
-def update_health_row(ws, row_idx: int, entry: dict):
-    ws.update(f"A{row_idx}:E{row_idx}", [[entry["date"], entry["weight"], entry["protein"], entry["calories"], entry["sleep"]]])
-
-
-def delete_health_row(ws, row_idx: int):
-    ws.delete_rows(row_idx)
-
-
-def find_row_by_date(ws, target_date: str) -> int | None:
-    """Returns 1-based row index (header is row 1)."""
-    cells = ws.col_values(1)
-    for i, val in enumerate(cells):
-        if val == target_date:
-            return i + 1
-    return None
+def delete_health_row(target_date):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM health WHERE date = %s", (target_date,))
+        conn.commit()
 
 
 def compute_weekly_averages(df: pd.DataFrame) -> pd.DataFrame:
@@ -109,14 +94,6 @@ st.markdown(
 
 st.title("Tracker")
 
-# ── Connect to Google Sheets ──────────────────────────────────────────────────
-try:
-    client = get_gspread_client()
-    spreadsheet = client.open(st.secrets["spreadsheet_name"])
-except Exception as e:
-    st.error(f"Could not connect to Google Sheets. Check your secrets.\n\n`{e}`")
-    st.stop()
-
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 tab_health, tab_analytics = st.tabs(["🏋️ Health", "📈 Analytics"])
 
@@ -124,11 +101,8 @@ tab_health, tab_analytics = st.tabs(["🏋️ Health", "📈 Analytics"])
 # HEALTH TAB
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_health:
-    HEALTH_HEADERS = ["date", "weight", "protein", "calories", "sleep"]
-    ws_health = get_or_create_worksheet(spreadsheet, SHEET_NAME, HEALTH_HEADERS)
-    df = load_health_data(ws_health)
+    df = load_health_data()
 
-    # ── Add / Edit entry ──────────────────────────────────────────────────────
     with st.expander("**Add new entry**", expanded=True):
         cols = st.columns([1.5, 1, 1, 1, 1, 0.8])
         with cols[0]:
@@ -153,14 +127,8 @@ with tab_health:
                 "calories": calories,
                 "sleep": sleep,
             }
-            existing_row = find_row_by_date(ws_health, str(entry_date))
-            if existing_row:
-                update_health_row(ws_health, existing_row, entry)
-                st.success(f"Updated entry for {entry_date}.")
-            else:
-                save_health_row(ws_health, entry)
-                st.success(f"Added entry for {entry_date}.")
-            st.cache_resource.clear()
+            upsert_health_row(entry)
+            st.success(f"Saved entry for {entry_date}.")
             st.rerun()
 
     # ── Daily log ─────────────────────────────────────────────────────────────
@@ -183,10 +151,7 @@ with tab_health:
                 key="health_del_date",
             )
             if st.button("Delete", type="secondary", key="health_del_btn"):
-                row_idx = find_row_by_date(ws_health, str(del_date))
-                if row_idx:
-                    delete_health_row(ws_health, row_idx)
-                st.cache_resource.clear()
+                delete_health_row(del_date)
                 st.rerun()
 
     # ── Weekly averages ───────────────────────────────────────────────────────
@@ -222,8 +187,7 @@ with tab_health:
 # ANALYTICS TAB
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_analytics:
-    ws_health = get_or_create_worksheet(spreadsheet, SHEET_NAME, ["date", "weight", "protein", "calories", "sleep"])
-    df = load_health_data(ws_health)
+    df = load_health_data()
 
     if df.empty:
         st.info("Add health entries to see charts.")
