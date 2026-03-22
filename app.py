@@ -87,37 +87,45 @@ def compute_weekly_averages(df: pd.DataFrame) -> pd.DataFrame:
     return weekly[["week", "days_logged", "weight", "protein", "calories", "sleep", "steps"]]
 
 
-def _static_line_fig(dates, y, *, color="#2563eb"):
-    fig, ax = plt.subplots(figsize=(5.2, 2.8))
-    if len(dates) <= 25:
-        ax.plot(dates, y, color=color, linewidth=2, marker="o", markersize=4)
-    else:
-        ax.plot(dates, y, color=color, linewidth=2)
-    ax.set_facecolor("#fafafa")
-    ax.grid(True, alpha=0.35)
-    ax.tick_params(axis="x", labelsize=9)
-    ax.tick_params(axis="y", labelsize=9)
+CHART_BG = "#fafbfc"
+
+def _style_ax(ax, fig):
+    ax.set_facecolor(CHART_BG)
+    ax.grid(True, color="#e5e7eb", linewidth=0.6, alpha=0.7)
+    ax.tick_params(axis="x", labelsize=8, colors="#6b7280")
+    ax.tick_params(axis="y", labelsize=8, colors="#6b7280")
+    for spine in ax.spines.values():
+        spine.set_visible(False)
     fig.patch.set_facecolor("white")
     fig.autofmt_xdate()
-    plt.tight_layout()
+    plt.tight_layout(pad=1.2)
+
+
+def _static_line_fig(dates, y, *, color="#2563eb", title=""):
+    fig, ax = plt.subplots(figsize=(5.5, 3.0))
+    if title:
+        ax.set_title(title, fontsize=11, fontweight="bold", color="#1f2937", pad=10, loc="left")
+    if len(dates) <= 25:
+        ax.plot(dates, y, color=color, linewidth=2.2, marker="o", markersize=4.5, markeredgecolor="white", markeredgewidth=1.2)
+    else:
+        ax.plot(dates, y, color=color, linewidth=2.2)
+    ax.fill_between(dates, y, alpha=0.07, color=color)
+    _style_ax(ax, fig)
     return fig
 
 
 def _static_sleep_lines_fig(dates, daily, avg_7d):
-    fig, ax = plt.subplots(figsize=(5.2, 2.8))
+    fig, ax = plt.subplots(figsize=(5.5, 3.0))
+    ax.set_title("Sleep (hrs)", fontsize=11, fontweight="bold", color="#1f2937", pad=10, loc="left")
     if len(dates) <= 25:
-        ax.plot(dates, daily, color="#2563eb", linewidth=2, marker="o", markersize=4, label="Daily")
+        ax.plot(dates, daily, color="#2563eb", linewidth=2.2, marker="o", markersize=4.5,
+                markeredgecolor="white", markeredgewidth=1.2, label="Daily")
     else:
-        ax.plot(dates, daily, color="#2563eb", linewidth=2, label="Daily")
-    ax.plot(dates, avg_7d, color="#c2410c", linewidth=2, label="7-day avg")
-    ax.legend(loc="best", fontsize=8)
-    ax.set_facecolor("#fafafa")
-    ax.grid(True, alpha=0.35)
-    ax.tick_params(axis="x", labelsize=9)
-    ax.tick_params(axis="y", labelsize=9)
-    fig.patch.set_facecolor("white")
-    fig.autofmt_xdate()
-    plt.tight_layout()
+        ax.plot(dates, daily, color="#2563eb", linewidth=2.2, label="Daily")
+    ax.plot(dates, avg_7d, color="#f59e0b", linewidth=2, linestyle="--", label="7-day avg")
+    ax.fill_between(dates, daily, alpha=0.06, color="#2563eb")
+    ax.legend(loc="best", fontsize=8, framealpha=0.9, edgecolor="#e5e7eb")
+    _style_ax(ax, fig)
     return fig
 
 
@@ -314,7 +322,7 @@ def render_health_section():
 
 def render_graphs_section():
     gdf = load_health_data()
-    st.subheader("Graphs")
+    st.header("Trends")
 
     if gdf.empty:
         st.info("No entries yet. Add health data in the **Health** section to see graphs.")
@@ -328,24 +336,20 @@ def render_graphs_section():
         dates = chart_df["date"]
         g1, g2 = st.columns(2)
         with g1:
-            st.markdown("**Weight (kg)**")
-            st.pyplot(_static_line_fig(dates, chart_df["weight"]), clear_figure=True)
+            st.pyplot(_static_line_fig(dates, chart_df["weight"], title="Weight (kg)"), clear_figure=True)
         with g2:
-            st.markdown("**Protein (g)**")
-            st.pyplot(_static_line_fig(dates, chart_df["protein"], color="#7c3aed"), clear_figure=True)
+            st.pyplot(_static_line_fig(dates, chart_df["protein"], color="#7c3aed", title="Protein (g)"), clear_figure=True)
 
         g3, g4 = st.columns(2)
         with g3:
-            st.markdown("**Calories**")
-            st.pyplot(_static_line_fig(dates, chart_df["calories"], color="#059669"), clear_figure=True)
+            st.pyplot(_static_line_fig(dates, chart_df["calories"], color="#059669", title="Calories"), clear_figure=True)
         with g4:
-            st.markdown("**Sleep (hrs)**")
-            st.caption("Daily logged hours and 7-day rolling average.")
             avg7 = chart_df["sleep"].rolling(7, min_periods=1).mean()
             st.pyplot(_static_sleep_lines_fig(dates, chart_df["sleep"], avg7), clear_figure=True)
 
-        st.markdown("**Steps (day)**")
-        st.pyplot(_static_line_fig(dates, chart_df["steps"], color="#ca8a04"), clear_figure=True)
+        g5, _ = st.columns(2)
+        with g5:
+            st.pyplot(_static_line_fig(dates, chart_df["steps"], color="#ca8a04", title="Steps"), clear_figure=True)
 
 
 def render_sleep_section():
@@ -493,64 +497,85 @@ st.set_page_config(page_title="Tracker", page_icon="📊", layout="wide")
 st.markdown(
     """
     <style>
-    .block-container { max-width: 960px; }
-    div[data-testid="stMetric"] {
-        background: #f8f9fa;
-        border-radius: 10px;
-        padding: 12px 16px;
-        box-shadow: 0 1px 3px rgba(0,0,0,.08);
+    .block-container { max-width: 1000px; padding-top: 2rem; }
+
+    /* sidebar styling */
+    section[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+        min-width: 220px;
+        max-width: 260px;
     }
+    section[data-testid="stSidebar"] .stMarkdown h1,
+    section[data-testid="stSidebar"] .stMarkdown p,
+    section[data-testid="stSidebar"] .stCaption {
+        color: #e2e8f0 !important;
+    }
+
+    /* metric cards */
+    div[data-testid="stMetric"] {
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 14px 18px;
+        box-shadow: 0 2px 8px rgba(0,0,0,.04);
+    }
+    div[data-testid="stMetric"] label { color: #64748b !important; font-size: 13px !important; }
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] { color: #0f172a !important; }
+
+    /* dataframe container */
+    .stDataFrame { border-radius: 12px; overflow: hidden; }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-st.title("Tracker")
+# ── Sidebar navigation ───────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("# 📊 Tracker")
+    st.caption("Your personal health dashboard")
+    st.markdown("---")
 
-nav_col, main_col = st.columns([1.35, 4.65], gap="large")
-
-with nav_col:
-    with st.container(border=True):
-        st.markdown("### Sections")
-        st.caption("Move between tracker views")
-        default_index = NAV_OPTIONS.index(st.session_state.get("nav_menu", NAV_OPTIONS[0]))
-        section = option_menu(
-            menu_title=None,
-            options=NAV_OPTIONS,
-            icons=["heart-pulse", "moon-stars", "bar-chart-line"],
-            default_index=default_index,
-            orientation="vertical",
-            key="nav_menu",
-            styles={
-                "container": {
-                    "padding": "0",
-                    "background-color": "transparent",
-                },
-                "icon": {
-                    "color": "#2563eb",
-                    "font-size": "18px",
-                },
-                "nav-link": {
-                    "font-size": "16px",
-                    "font-weight": "600",
-                    "text-align": "left",
-                    "margin": "0 0 8px 0",
-                    "padding": "12px 14px",
-                    "border-radius": "12px",
-                    "color": "#1f2937",
-                    "--hover-color": "#eef4ff",
-                },
-                "nav-link-selected": {
-                    "background-color": "#2563eb",
-                    "color": "white",
-                },
+    section = option_menu(
+        menu_title=None,
+        options=NAV_OPTIONS,
+        icons=["heart-pulse", "moon-stars", "bar-chart-line"],
+        default_index=0,
+        orientation="vertical",
+        key="nav_menu",
+        styles={
+            "container": {
+                "padding": "0",
+                "background-color": "transparent",
             },
-        )
+            "icon": {
+                "color": "#94a3b8",
+                "font-size": "18px",
+            },
+            "nav-link": {
+                "font-size": "15px",
+                "font-weight": "500",
+                "text-align": "left",
+                "margin": "4px 0",
+                "padding": "12px 16px",
+                "border-radius": "10px",
+                "color": "#cbd5e1",
+                "--hover-color": "rgba(255,255,255,0.08)",
+            },
+            "nav-link-selected": {
+                "background-color": "#2563eb",
+                "color": "white",
+                "font-weight": "600",
+            },
+        },
+    )
 
-with main_col:
-    if section == NAV_OPTIONS[0]:
-        render_health_section()
-    elif section == NAV_OPTIONS[1]:
-        render_sleep_section()
-    elif section == NAV_OPTIONS[2]:
-        render_graphs_section()
+    st.markdown("---")
+    st.caption(f"Today: {date.today().strftime('%b %d, %Y')}")
+
+# ── Main content ──────────────────────────────────────────────────────────────
+if section == NAV_OPTIONS[0]:
+    render_health_section()
+elif section == NAV_OPTIONS[1]:
+    render_sleep_section()
+elif section == NAV_OPTIONS[2]:
+    render_graphs_section()
