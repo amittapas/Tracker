@@ -172,6 +172,86 @@ def load_reading_data_with_id() -> pd.DataFrame:
     return df
 
 
+# ── Goals (pushups, running, pages, steps, writing, passive income) ───────────
+
+GOAL_METRICS = {
+    "pushups": {"label": "Pushups", "unit": "reps", "start": 15, "delta": 3, "format": "{:.0f}"},
+    "running": {"label": "Running", "unit": "min", "start": 10, "delta": 1, "format": "{:.0f}"},
+    "pages": {"label": "Pages read (session goal)", "unit": "pages", "start": 10, "delta": 1, "format": "{:.0f}"},
+    "steps": {"label": "Daily steps", "unit": "steps", "start": 5000, "delta": 100, "format": "{:.0f}"},
+    "writing": {"label": "Writing", "unit": "words", "start": 100, "delta": 50, "format": "{:.0f}"},
+    "passive_income": {"label": "Passive income (monthly)", "unit": "$", "start": 100, "delta": 10, "format": "{:.0f}"},
+}
+
+
+def _ensure_goal_rows():
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            for key, cfg in GOAL_METRICS.items():
+                cur.execute(
+                    """
+                    INSERT INTO user_goals (metric_key, current_target, max_achieved)
+                    VALUES (%s, %s, 0)
+                    ON CONFLICT (metric_key) DO NOTHING
+                    """,
+                    (key, cfg["start"]),
+                )
+        conn.commit()
+
+
+def load_goals() -> dict:
+    _ensure_goal_rows()
+    with get_conn() as conn:
+        df = pd.read_sql("SELECT metric_key, current_target, max_achieved FROM user_goals", conn)
+    out = {}
+    for _, r in df.iterrows():
+        out[r["metric_key"]] = {
+            "current_target": float(r["current_target"]),
+            "max_achieved": float(r["max_achieved"]),
+        }
+    return out
+
+
+def apply_goal_success(metric_key: str):
+    if metric_key not in GOAL_METRICS:
+        return
+    cfg = GOAL_METRICS[metric_key]
+    delta = cfg["delta"]
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT current_target, max_achieved FROM user_goals WHERE metric_key = %s",
+                (metric_key,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return
+            current_target, max_achieved = float(row[0]), float(row[1])
+            new_max = max(max_achieved, current_target)
+            new_target = current_target + delta
+            cur.execute(
+                """
+                UPDATE user_goals
+                SET current_target = %s, max_achieved = %s
+                WHERE metric_key = %s
+                """,
+                (new_target, new_max, metric_key),
+            )
+        conn.commit()
+
+
+def apply_goal_failure(metric_key: str):
+    """No change to targets — placeholder for future logging."""
+    pass
+
+
+def _fmt_goal_value(metric_key: str, val: float) -> str:
+    if metric_key == "passive_income":
+        return f"${val:.0f}"
+    cfg = GOAL_METRICS[metric_key]
+    return f"{cfg['format'].format(val)} {cfg['unit']}"
+
+
 def compute_pages_per_day() -> pd.DataFrame:
     """For each book, compute pages read per day using the difference in end_page between consecutive entries."""
     with get_conn() as conn:
@@ -437,6 +517,39 @@ def render_reading_section():
                 st.rerun()
 
 
+def render_goals_section():
+    st.header("Goals")
+    st.caption(
+        "Each card shows your **next target** and **current max** (best level you locked in on Achieved). "
+        "**Achieved** increases the next target by the step. **Failed** leaves targets unchanged."
+    )
+    goals = load_goals()
+
+    for metric_key, cfg in GOAL_METRICS.items():
+        g = goals.get(metric_key, {"current_target": cfg["start"], "max_achieved": 0.0})
+        cur_t = g["current_target"]
+        max_t = g["max_achieved"]
+        delta_note = f"+${cfg['delta']:.0f}/step" if metric_key == "passive_income" else f"+{cfg['delta']:.0f} {cfg['unit']}/step"
+
+        with st.container(border=True):
+            st.markdown(f"**{cfg['label']}**")
+            st.caption(delta_note)
+            m1, m2 = st.columns(2)
+            with m1:
+                st.metric("Next target", _fmt_goal_value(metric_key, cur_t))
+            with m2:
+                st.metric("Current max", _fmt_goal_value(metric_key, max_t))
+            b1, b2 = st.columns(2)
+            with b1:
+                if st.button("Achieved", type="primary", key=f"goal_ok_{metric_key}", use_container_width=True):
+                    apply_goal_success(metric_key)
+                    st.rerun()
+            with b2:
+                if st.button("Failed", key=f"goal_fail_{metric_key}", use_container_width=True):
+                    apply_goal_failure(metric_key)
+                    st.toast("Target unchanged.")
+
+
 def render_graphs_section():
     gdf = load_health_data()
     st.header("Trends")
@@ -623,6 +736,7 @@ pg = st.navigation(
             st.Page(render_health_section, title="Health", icon=":material/favorite:"),
             st.Page(render_sleep_section, title="Sleep", icon=":material/bedtime:"),
             st.Page(render_reading_section, title="Reading", icon=":material/menu_book:"),
+            st.Page(render_goals_section, title="Goals", icon=":material/flag:"),
             st.Page(render_graphs_section, title="Trends", icon=":material/bar_chart:"),
         ],
     }
