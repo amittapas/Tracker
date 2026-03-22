@@ -291,31 +291,33 @@ with tab_graphs:
     else:
         chart_df = gdf.copy()
         chart_df["date"] = pd.to_datetime(chart_df["date"])
-        chart_df = chart_df.sort_values("date").set_index("date")
+        chart_df = chart_df.sort_values("date")
+        for col in ("weight", "protein", "calories", "sleep"):
+            chart_df[col] = pd.to_numeric(chart_df[col], errors="coerce").astype("float64")
 
         g1, g2 = st.columns(2)
         with g1:
             st.markdown("**Weight (kg)**")
-            st.line_chart(chart_df[["weight"]], height=220)
+            st.line_chart(chart_df, x="date", y="weight", height=220)
         with g2:
             st.markdown("**Protein (g)**")
-            st.line_chart(chart_df[["protein"]], height=220)
+            st.line_chart(chart_df, x="date", y="protein", height=220)
 
         g3, g4 = st.columns(2)
         with g3:
             st.markdown("**Calories**")
-            st.line_chart(chart_df[["calories"]], height=220)
+            st.line_chart(chart_df, x="date", y="calories", height=220)
         with g4:
             st.markdown("**Sleep (hrs)**")
             st.caption("Daily logged hours and 7-day rolling average.")
             sleep_plot = pd.DataFrame(
                 {
+                    "date": chart_df["date"],
                     "Daily": chart_df["sleep"],
                     "7-day avg": chart_df["sleep"].rolling(7, min_periods=1).mean(),
-                },
-                index=chart_df.index,
+                }
             )
-            st.line_chart(sleep_plot, height=200)
+            st.line_chart(sleep_plot, x="date", y=["Daily", "7-day avg"], height=220)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SLEEP TAB
