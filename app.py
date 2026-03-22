@@ -225,20 +225,22 @@ def render_health_section():
     df = load_health_data()
 
     with st.expander("**Add new entry**", expanded=True):
-        cols = st.columns([1.5, 1, 1, 1, 1, 1, 0.8])
-        with cols[0]:
+        row1 = st.columns(3)
+        with row1[0]:
             entry_date = st.date_input("Date", value=date.today(), key="health_date")
-        with cols[1]:
+        with row1[1]:
             weight = st.number_input("Weight (kg)", min_value=0.0, max_value=300.0, value=70.0, step=0.1, key="health_weight")
-        with cols[2]:
+        with row1[2]:
             protein = st.number_input("Protein (g)", min_value=0, max_value=1000, value=120, step=1, key="health_protein")
-        with cols[3]:
+
+        row2 = st.columns([1, 1, 1, 0.6])
+        with row2[0]:
             calories = st.number_input("Calories", min_value=0, max_value=10000, value=2000, step=50, key="health_calories")
-        with cols[4]:
+        with row2[1]:
             sleep = st.number_input("Sleep (hrs)", min_value=0.0, max_value=24.0, value=7.5, step=0.25, key="health_sleep")
-        with cols[5]:
+        with row2[2]:
             steps = st.number_input("Steps (day)", min_value=0, max_value=100000, value=0, step=100, key="health_steps")
-        with cols[6]:
+        with row2[3]:
             st.markdown("<br>", unsafe_allow_html=True)
             add_btn = st.button("Add", type="primary", use_container_width=True, key="health_add")
 
