@@ -506,26 +506,24 @@ st.markdown(
 
 st.title("Tracker")
 
-main_col, nav_col = st.columns([5, 1], gap="large")
-
-with main_col:
-    section = st.session_state.get("nav_radio", NAV_OPTIONS[0])
-    if section not in NAV_OPTIONS:
-        section = NAV_OPTIONS[0]
-    if section == NAV_OPTIONS[0]:
-        render_health_section()
-    elif section == NAV_OPTIONS[1]:
-        render_sleep_section()
-    elif section == NAV_OPTIONS[2]:
-        render_graphs_section()
+nav_col, main_col = st.columns([1.2, 4.8], gap="large")
 
 with nav_col:
     with st.container(border=True):
-        st.markdown("**Section**")
-        st.radio(
+        st.markdown("### Sections")
+        st.caption("Choose a view")
+        section = st.radio(
             "Navigation",
             NAV_OPTIONS,
             label_visibility="collapsed",
             key="nav_radio",
             horizontal=False,
         )
+
+with main_col:
+    if section == NAV_OPTIONS[0]:
+        render_health_section()
+    elif section == NAV_OPTIONS[1]:
+        render_sleep_section()
+    elif section == NAV_OPTIONS[2]:
+        render_graphs_section()
