@@ -213,32 +213,10 @@ def fmt_duration(hrs):
     return f"{h}h {m}m"
 
 
-# ── Page config ───────────────────────────────────────────────────────────────
-st.set_page_config(page_title="Tracker", page_icon="📊", layout="wide")
+NAV_OPTIONS = ["🏋️ Health", "😴 Sleep", "📈 Graphs"]
 
-st.markdown(
-    """
-    <style>
-    .block-container { max-width: 960px; }
-    div[data-testid="stMetric"] {
-        background: #f8f9fa;
-        border-radius: 10px;
-        padding: 12px 16px;
-        box-shadow: 0 1px 3px rgba(0,0,0,.08);
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
-st.title("Tracker")
-
-tab_health, tab_sleep, tab_graphs = st.tabs(["🏋️ Health", "😴 Sleep", "📈 Graphs"])
-
-# ══════════════════════════════════════════════════════════════════════════════
-# HEALTH TAB
-# ══════════════════════════════════════════════════════════════════════════════
-with tab_health:
+def render_health_section():
     df = load_health_data()
 
     with st.expander("**Add new entry**", expanded=True):
@@ -332,15 +310,13 @@ with tab_health:
             m4.metric("Avg Sleep", f"{current_week['sleep'].mean():.1f} hrs")
             m5.metric("Avg Steps", f"{current_week['steps'].mean():.0f}")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# GRAPHS TAB
-# ══════════════════════════════════════════════════════════════════════════════
-with tab_graphs:
+
+def render_graphs_section():
     gdf = load_health_data()
     st.subheader("Graphs")
 
     if gdf.empty:
-        st.info("No entries yet. Add health data in the **Health** tab to see graphs.")
+        st.info("No entries yet. Add health data in the **Health** section to see graphs.")
     else:
         chart_df = gdf.copy()
         chart_df["date"] = pd.to_datetime(chart_df["date"])
@@ -370,10 +346,8 @@ with tab_graphs:
         st.markdown("**Steps (day)**")
         st.pyplot(_static_line_fig(dates, chart_df["steps"], color="#ca8a04"), clear_figure=True)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# SLEEP TAB
-# ══════════════════════════════════════════════════════════════════════════════
-with tab_sleep:
+
+def render_sleep_section():
     now = datetime.now(TIMEZONE)
     open_session = get_open_sleep_session()
 
@@ -510,3 +484,48 @@ with tab_sleep:
             if st.button("Delete", type="secondary", key="sleep_del_btn"):
                 delete_sleep_row(del_sleep)
                 st.rerun()
+
+
+# ── Page config ───────────────────────────────────────────────────────────────
+st.set_page_config(page_title="Tracker", page_icon="📊", layout="wide")
+
+st.markdown(
+    """
+    <style>
+    .block-container { max-width: 960px; }
+    div[data-testid="stMetric"] {
+        background: #f8f9fa;
+        border-radius: 10px;
+        padding: 12px 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,.08);
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.title("Tracker")
+
+main_col, nav_col = st.columns([5, 1], gap="large")
+
+with main_col:
+    section = st.session_state.get("nav_radio", NAV_OPTIONS[0])
+    if section not in NAV_OPTIONS:
+        section = NAV_OPTIONS[0]
+    if section == NAV_OPTIONS[0]:
+        render_health_section()
+    elif section == NAV_OPTIONS[1]:
+        render_sleep_section()
+    elif section == NAV_OPTIONS[2]:
+        render_graphs_section()
+
+with nav_col:
+    with st.container(border=True):
+        st.markdown("**Section**")
+        st.radio(
+            "Navigation",
+            NAV_OPTIONS,
+            label_visibility="collapsed",
+            key="nav_radio",
+            horizontal=False,
+        )
