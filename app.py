@@ -353,12 +353,15 @@ with tab_sleep:
         avg_disturbances = sleep_df["disturbances"].mean()
         undisturbed_nights = (sleep_df["disturbances"] == 0).sum()
 
-        m1, m2, m3, m4, m5 = st.columns(5)
+        m1, m2, m3 = st.columns(3)
         m1.metric("Avg Duration", fmt_duration(avg_duration))
         m2.metric("Avg Bedtime", avg_bedtime_str)
         m3.metric("Avg Wake Time", avg_waketime_str)
+
+        m4, m5, m6 = st.columns(3)
         m4.metric("Avg Disturbances", f"{avg_disturbances:.1f}/night")
         m5.metric("Undisturbed Nights", f"{undisturbed_nights}/{len(sleep_df)}")
+        m6.metric("Total Nights", str(len(sleep_df)))
 
         # ── Last 7 days ──────────────────────────────────────────────────────
         week_ago = now - timedelta(days=7)
