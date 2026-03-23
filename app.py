@@ -3,7 +3,6 @@ from typing import Optional
 import html
 import hmac
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import psycopg2
 import matplotlib.pyplot as plt
@@ -38,28 +37,8 @@ def trigger_celebration():
 
 
 def show_confetti():
-    """Canvas-confetti burst (loads from CDN inside component iframe)."""
-    components.html(
-        """
-        <script>
-        (function () {
-          var s = document.createElement("script");
-          s.src = "https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js";
-          s.onload = function () {
-            try {
-              confetti({ particleCount: 160, spread: 78, origin: { y: 0.58 }, ticks: 280 });
-              setTimeout(function () {
-                confetti({ particleCount: 90, angle: 55, spread: 50, origin: { x: 0, y: 0.68 } });
-                confetti({ particleCount: 90, angle: 125, spread: 50, origin: { x: 1, y: 0.68 } });
-              }, 220);
-            } catch (e) {}
-          };
-          document.head.appendChild(s);
-        })();
-        </script>
-        """,
-        height=0,
-    )
+    """Celebration effect — native Streamlit balloons (works reliably; iframe confetti often blocked)."""
+    st.balloons()
 
 
 def render_password_gate():
@@ -645,20 +624,28 @@ def render_goals_section():
                 <div style="color:#2563eb; font-size:0.72rem; font-weight:700; text-transform:uppercase;
                             letter-spacing:0.09em;">{lbl}</div>
                 <div style="color:#64748b; font-size:0.8rem; margin-top:0.3rem;">{cap}</div>
-                <div style="display:flex; gap:0.85rem; margin-top:0.85rem; flex-wrap:wrap;">
-                    <div style="flex:1; min-width:120px; background: #f8fafc;
-                                border-radius: 10px; padding: 0.65rem 0.85rem;
-                                border: 1px solid #e2e8f0;">
-                        <div style="color:#64748b; font-size:0.68rem; text-transform:uppercase;
-                                    letter-spacing:0.07em;">Next target</div>
-                        <div style="color:#0f172a; font-size:1.28rem; font-weight:700; margin-top:0.15rem;">{vt}</div>
+                <div style="margin-top:1rem;
+                            background: linear-gradient(145deg, #ecfdf5 0%, #d1fae5 45%, #a7f3d0 100%);
+                            border: 2px solid #0d9488;
+                            border-radius: 14px;
+                            padding: 1rem 1.15rem 1.1rem;
+                            box-shadow: 0 6px 20px rgba(13, 148, 136, 0.25);">
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:0.75rem; flex-wrap:wrap;">
+                        <div style="color:#0f766e; font-size:0.72rem; font-weight:800; text-transform:uppercase;
+                                    letter-spacing:0.1em;">Current max</div>
+                        <div style="font-size:1.1rem;">🏆</div>
                     </div>
-                    <div style="flex:1; min-width:120px; background: #f0fdfa;
-                                border-radius: 10px; padding: 0.65rem 0.85rem;
-                                border: 1px solid #99f6e4;">
-                        <div style="color:#64748b; font-size:0.68rem; text-transform:uppercase;
-                                    letter-spacing:0.07em;">Current max</div>
-                        <div style="color:#0d9488; font-size:1.28rem; font-weight:700; margin-top:0.15rem;">{vm}</div>
+                    <div style="color:#065f46; font-size:2.05rem; font-weight:800; line-height:1.15;
+                                margin-top:0.45rem; letter-spacing:-0.03em;">{vm}</div>
+                    <div style="color:#047857; font-size:0.78rem; font-weight:600; margin-top:0.35rem;">Your best so far</div>
+                </div>
+                <div style="margin-top:0.85rem; display:flex; gap:0.85rem; flex-wrap:wrap; align-items:stretch;">
+                    <div style="flex:1; min-width:140px; background: #f8fafc;
+                                border-radius: 10px; padding: 0.7rem 0.9rem;
+                                border: 1px solid #e2e8f0;">
+                        <div style="color:#64748b; font-size:0.68rem; font-weight:600; text-transform:uppercase;
+                                    letter-spacing:0.07em;">Next target</div>
+                        <div style="color:#0f172a; font-size:1.28rem; font-weight:700; margin-top:0.2rem;">{vt}</div>
                     </div>
                 </div>
             </div>
