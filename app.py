@@ -257,6 +257,17 @@ GOAL_SHORT_TITLES = {
     "passive_income": "Passive (mo.)",
 }
 
+# Per-goal accent: main hue, soft chip behind icon, hairline border
+GOAL_STYLE = {
+    "pushups": {"accent": "#e11d48", "chip": "#fff1f2", "ring": "rgba(225, 29, 72, 0.12)"},
+    "running": {"accent": "#2563eb", "chip": "#eff6ff", "ring": "rgba(37, 99, 235, 0.12)"},
+    "pages": {"accent": "#c2410c", "chip": "#fffbeb", "ring": "rgba(194, 65, 12, 0.1)"},
+    "steps": {"accent": "#059669", "chip": "#ecfdf5", "ring": "rgba(5, 150, 105, 0.12)"},
+    "writing": {"accent": "#7c3aed", "chip": "#f5f3ff", "ring": "rgba(124, 58, 237, 0.12)"},
+    "fasting": {"accent": "#0e7490", "chip": "#ecfeff", "ring": "rgba(14, 116, 144, 0.12)"},
+    "passive_income": {"accent": "#a16207", "chip": "#fefce8", "ring": "rgba(161, 98, 7, 0.12)"},
+}
+
 
 def _goal_compact_card_html(metric_key: str, cfg: dict, goals: dict) -> str:
     g = goals.get(metric_key, {"current_target": cfg["start"], "max_achieved": 0.0})
@@ -267,23 +278,31 @@ def _goal_compact_card_html(metric_key: str, cfg: dict, goals: dict) -> str:
     title = html.escape(GOAL_SHORT_TITLES.get(metric_key, cfg["label"]))
     cap = html.escape(_goals_delta_caption(metric_key, cfg))
     icon = GOAL_ICONS.get(metric_key, "🎯")
+    stl = GOAL_STYLE.get(metric_key, {"accent": "#475569", "chip": "#f1f5f9", "ring": "rgba(71, 85, 105, 0.12)"})
+    ac, chip, ring = stl["accent"], stl["chip"], stl["ring"]
     return f"""
-<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:0.45rem 0.55rem 0.5rem;
-            margin-bottom:0.2rem;box-shadow:0 1px 6px rgba(15,23,42,0.05);">
-  <div style="display:flex;flex-direction:row;align-items:flex-start;gap:0.45rem;">
-    <div style="font-size:1.85rem;line-height:1;flex-shrink:0;width:2.1rem;text-align:center;">{icon}</div>
-    <div style="flex:1;min-width:0;">
-      <div style="color:#2563eb;font-size:0.62rem;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;">{title}</div>
-      <div style="color:#94a3b8;font-size:0.65rem;margin-top:0.1rem;line-height:1.25;">{cap}</div>
-      <div style="display:flex;gap:0.35rem;margin-top:0.4rem;flex-wrap:nowrap;">
-        <div style="flex:1;background:linear-gradient(145deg,#ecfdf5,#d1fae5);border:1.5px solid #0d9488;border-radius:8px;
-                    padding:0.35rem 0.45rem;min-width:0;">
-          <div style="color:#0f766e;font-size:0.55rem;font-weight:800;text-transform:uppercase;">Max</div>
-          <div style="color:#065f46;font-size:1.15rem;font-weight:800;line-height:1.1;margin-top:0.08rem;">{vm}</div>
+<div style="font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;
+            background:linear-gradient(180deg,#ffffff 0%,#fafbfc 100%);
+            border:1px solid #e8ecf1;border-radius:16px;padding:0.75rem 0.85rem 0.8rem;margin-bottom:0.35rem;
+            box-shadow:0 1px 2px rgba(15,23,42,0.04),0 8px 24px -8px rgba(15,23,42,0.08);">
+  <div style="display:flex;align-items:flex-start;gap:0.65rem;">
+    <div style="flex-shrink:0;width:2.65rem;height:2.65rem;border-radius:14px;
+                background:{chip};box-shadow:inset 0 0 0 1px {ring};
+                display:flex;align-items:center;justify-content:center;font-size:1.45rem;line-height:1;">{icon}</div>
+    <div style="flex:1;min-width:0;padding-top:0.05rem;">
+      <div style="color:#0f172a;font-size:0.92rem;font-weight:600;letter-spacing:-0.02em;line-height:1.25;">{title}</div>
+      <div style="color:#64748b;font-size:0.72rem;margin-top:0.2rem;line-height:1.35;">{cap}</div>
+      <div style="display:flex;margin-top:0.65rem;border-radius:12px;overflow:hidden;
+                  background:#f4f6f9;box-shadow:inset 0 0 0 1px #e8ecf1;">
+        <div style="flex:1;padding:0.5rem 0.55rem;min-width:0;border-right:1px solid #e2e8f0;">
+          <div style="color:#64748b;font-size:0.65rem;font-weight:500;letter-spacing:0.02em;">Personal best</div>
+          <div style="color:{ac};font-size:1.2rem;font-weight:700;letter-spacing:-0.03em;
+                      font-variant-numeric:tabular-nums;line-height:1.2;margin-top:0.15rem;">{vm}</div>
         </div>
-        <div style="flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:0.35rem 0.45rem;min-width:0;">
-          <div style="color:#64748b;font-size:0.55rem;font-weight:700;text-transform:uppercase;">Next</div>
-          <div style="color:#0f172a;font-size:1.05rem;font-weight:700;line-height:1.1;margin-top:0.08rem;">{vt}</div>
+        <div style="flex:1;padding:0.5rem 0.55rem;min-width:0;background:rgba(255,255,255,0.55);">
+          <div style="color:#64748b;font-size:0.65rem;font-weight:500;letter-spacing:0.02em;">Next target</div>
+          <div style="color:#1e293b;font-size:1.05rem;font-weight:600;letter-spacing:-0.02em;
+                      font-variant-numeric:tabular-nums;line-height:1.2;margin-top:0.15rem;">{vt}</div>
         </div>
       </div>
     </div>
@@ -638,18 +657,13 @@ def render_reading_section():
 def render_goals_section():
     st.markdown(
         """
-        <div style="background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-                    border: 1px solid #e2e8f0; border-radius: 12px; padding: 0.65rem 0.85rem;
-                    margin-bottom: 0.65rem; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);">
-            <div style="display:flex; align-items:center; gap:0.6rem;">
-                <span style="font-size:1.5rem;">🎯</span>
-                <div>
-                    <h2 style="margin:0; color:#0f172a; font-size:1.2rem; font-weight:700;">Goals</h2>
-                    <p style="margin:0.15rem 0 0 0; color:#64748b; font-size:0.78rem; line-height:1.35;">
-                        <strong style="color:#2563eb;">Achieved</strong> raises the bar · <strong>Failed</strong> holds
-                    </p>
-                </div>
-            </div>
+        <div style="font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;
+                    margin-bottom:1rem;padding-bottom:0.85rem;border-bottom:1px solid #e8ecf1;">
+            <h2 style="margin:0;color:#0f172a;font-size:1.35rem;font-weight:700;letter-spacing:-0.03em;">Goals</h2>
+            <p style="margin:0.35rem 0 0 0;color:#64748b;font-size:0.82rem;line-height:1.45;max-width:36rem;">
+                Log how it went: <span style="color:#2563eb;font-weight:600;">Achieved</span> nudges your next target up;
+                <span style="color:#475569;font-weight:600;">Failed</span> keeps it steady.
+            </p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -659,24 +673,13 @@ def render_goals_section():
     items = list(GOAL_METRICS.items())
 
     for i in range(0, len(items), 2):
-        col_a, col_b = st.columns(2, gap="small")
-        with col_a:
-            mk, cfg = items[i]
-            st.markdown(_goal_compact_card_html(mk, cfg, goals), unsafe_allow_html=True)
-            b1, b2 = st.columns(2)
-            with b1:
-                if st.button("Achieved", type="primary", key=f"goal_ok_{mk}", use_container_width=True):
-                    apply_goal_success(mk)
-                    st.toast("Nice — target bumped!", icon="🎯")
-                    trigger_celebration()
-                    st.rerun()
-            with b2:
-                if st.button("Failed", key=f"goal_fail_{mk}", use_container_width=True):
-                    apply_goal_failure(mk)
-                    st.toast("Target unchanged.")
-        with col_b:
-            if i + 1 < len(items):
-                mk, cfg = items[i + 1]
+        cols = st.columns(2, gap="medium")
+        for j, col in enumerate(cols):
+            idx = i + j
+            if idx >= len(items):
+                break
+            mk, cfg = items[idx]
+            with col:
                 st.markdown(_goal_compact_card_html(mk, cfg, goals), unsafe_allow_html=True)
                 b1, b2 = st.columns(2)
                 with b1:
