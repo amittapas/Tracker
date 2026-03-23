@@ -388,13 +388,9 @@ def _nfp_sawtooth_fig(epoch: datetime, relapses: list, now: datetime):
     return fig
 
 
-def render_nfp_section():
-    st.header("NFP")
-    st.caption(
-        "Your streak is how long you’ve stayed on track since the anchor time or your last reset. "
-        f"Times use **{TIMEZONE.zone}**."
-    )
-
+@st.fragment(run_every=timedelta(seconds=2))
+def _render_nfp_live_block():
+    """Metrics + sawtooth chart; auto-refreshes so the current segment keeps climbing in real time."""
     epoch = load_nfp_epoch()
     relapses = load_nfp_relapses()
     now = datetime.now(TIMEZONE)
@@ -411,6 +407,22 @@ def render_nfp_section():
         )
 
     st.markdown("---")
+    st.subheader("Streak history (live)")
+    st.caption(
+        "Y-axis is elapsed seconds in the current segment; vertical lines are resets. "
+        f"The line on the right keeps rising as time passes — updates every 2s · **{now.strftime('%H:%M:%S')}**"
+    )
+
+    fig = _nfp_sawtooth_fig(epoch, relapses, now)
+    st.pyplot(fig, clear_figure=True)
+
+
+def render_nfp_section():
+    st.header("NFP")
+    st.caption(
+        "Your streak is how long you’ve stayed on track since the anchor time or your last reset. "
+        f"Times use **{TIMEZONE.zone}**."
+    )
 
     with st.form("nfp_relapse_form"):
         st.markdown("**Reset streak** — records this moment and restarts your streak from now (the chart drops to zero).")
@@ -425,12 +437,9 @@ def render_nfp_section():
                 st.rerun()
 
     st.markdown("---")
-    st.subheader("Streak history (sawtooth)")
-    st.caption("Y-axis is elapsed seconds in the current segment at each moment; vertical lines are resets.")
+    _render_nfp_live_block()
 
-    fig = _nfp_sawtooth_fig(epoch, relapses, now)
-    st.pyplot(fig, clear_figure=True)
-
+    relapses = load_nfp_relapses()
     if relapses:
         with st.expander("Reset log (newest first)"):
             rdf = pd.DataFrame({"Reset at (local)": [r.strftime("%b %d, %Y  %-I:%M:%S %p") for r in reversed(relapses)]})
