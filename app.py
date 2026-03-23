@@ -227,6 +227,30 @@ def load_reading_data_with_id() -> pd.DataFrame:
 
 # ── NFP (streak timer: anchor + resets) ───────────────────────────────────────
 
+def _ensure_nfp_schema():
+    """Create NFP tables if missing (same as migrations/004_nfp_streak.sql) so Cloud works without manual SQL."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS nfp_streak (
+                  id INTEGER PRIMARY KEY CHECK (id = 1),
+                  epoch_started_at TIMESTAMPTZ NOT NULL
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS nfp_relapse (
+                  id SERIAL PRIMARY KEY,
+                  relapsed_at TIMESTAMPTZ NOT NULL
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_nfp_relapse_at ON nfp_relapse (relapsed_at)")
+        conn.commit()
+
+
 def _nfp_default_epoch() -> datetime:
     """Anchor streak at 4:00 PM local (Pacific). If before 4pm today, anchor is today 4pm (streak 0 until then)."""
     now = datetime.now(TIMEZONE)
@@ -235,6 +259,7 @@ def _nfp_default_epoch() -> datetime:
 
 
 def _ensure_nfp_streak_row():
+    _ensure_nfp_schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT 1 FROM nfp_streak WHERE id = 1")
@@ -259,6 +284,7 @@ def load_nfp_epoch() -> datetime:
 
 
 def load_nfp_relapses() -> list:
+    _ensure_nfp_schema()
     with get_conn() as conn:
         df = pd.read_sql("SELECT relapsed_at FROM nfp_relapse ORDER BY relapsed_at ASC", conn)
     if df.empty:
@@ -274,6 +300,7 @@ def load_nfp_relapses() -> list:
 
 
 def record_nfp_relapse():
+    _ensure_nfp_schema()
     now = datetime.now(TIMEZONE)
     with get_conn() as conn:
         with conn.cursor() as cur:
