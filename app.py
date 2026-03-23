@@ -340,6 +340,94 @@ def _ts_local(x) -> pd.Timestamp:
     return t.tz_convert(TIMEZONE)
 
 
+def _nfp_segments_data(epoch, relapses: list, now) -> list:
+    """Ordered segments (start, end, duration_sec, ongoing)."""
+    rel_sorted = sorted(relapses)
+    starts = [_ts_local(epoch)] + [_ts_local(r) for r in rel_sorted]
+    now_ts = _ts_local(now)
+    out = []
+    for i, seg_start in enumerate(starts):
+        seg_end = starts[i + 1] if i + 1 < len(starts) else now_ts
+        if seg_end <= seg_start:
+            continue
+        dur = (seg_end - seg_start).total_seconds()
+        out.append(
+            {
+                "start": seg_start,
+                "end": seg_end,
+                "duration_sec": dur,
+                "ongoing": i == len(starts) - 1,
+            }
+        )
+    return out
+
+
+def _nfp_timeline_fig(epoch, relapses: list, now: datetime):
+    """Single-row calendar view: green spans = clean periods, red ticks = resets."""
+    rel_sorted = sorted(relapses)
+    starts = [_ts_local(epoch)] + [_ts_local(r) for r in rel_sorted]
+    now_ts = _ts_local(now)
+    fig, ax = plt.subplots(figsize=(9, 2.0))
+    colors = ("#a7f3d0", "#86efac")
+    idx = 0
+    drew = False
+    for i, seg_start in enumerate(starts):
+        seg_end = starts[i + 1] if i + 1 < len(starts) else now_ts
+        if seg_end <= seg_start:
+            continue
+        ax.axvspan(seg_start, seg_end, ymin=0.15, ymax=0.85, color=colors[idx % 2], alpha=0.92, linewidth=0)
+        idx += 1
+        drew = True
+    for r in rel_sorted:
+        ax.axvline(r, color="#dc2626", linewidth=2.0, alpha=0.85, linestyle="-")
+    if not drew:
+        ax.text(0.5, 0.5, "Nothing to show yet.", ha="center", va="center", transform=ax.transAxes, color="#64748b")
+        ax.set_xticks([])
+        ax.set_yticks([])
+    ax.set_ylim(0, 1)
+    ax.set_yticks([])
+    ax.set_title("Timeline — green = on track, red line = reset", fontsize=11, fontweight="bold", color="#1f2937", pad=10, loc="left")
+    pad = timedelta(hours=1)
+    ax.set_xlim(_ts_local(epoch) - pad, now_ts + pad)
+    _style_ax(ax, fig)
+    return fig
+
+
+def _nfp_segment_bars_fig(segments: list):
+    """Horizontal bars: duration of each segment (hours); ongoing segment updates live."""
+    if not segments:
+        fig, ax = plt.subplots(figsize=(9, 2.0))
+        ax.text(0.5, 0.5, "No segments yet.", ha="center", va="center", transform=ax.transAxes, color="#64748b")
+        ax.set_xticks([])
+        ax.set_yticks([])
+        _style_ax(ax, fig)
+        return fig
+
+    hours = [s["duration_sec"] / 3600.0 for s in segments]
+    labels = []
+    for i, s in enumerate(segments):
+        tag = f"#{i + 1}"
+        if s["ongoing"]:
+            tag += " · current"
+        labels.append(tag)
+
+    fig, ax = plt.subplots(figsize=(9, max(2.4, 0.45 * len(segments))))
+    y_pos = list(range(len(segments)))
+    colors_b = ["#7c3aed" if s["ongoing"] else "#94a3b8" for s in segments]
+    ax.barh(y_pos, hours, color=colors_b, height=0.65, alpha=0.9, edgecolor="white", linewidth=0.8)
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(labels, fontsize=9, color="#475569")
+    ax.invert_yaxis()
+    ax.set_xlabel("Duration (hours)", fontsize=9, color="#6b7280")
+    ax.set_title("Length of each segment (until next reset)", fontsize=11, fontweight="bold", color="#1f2937", pad=10, loc="left")
+    span = max(hours) if hours else 1.0
+    ax.set_xlim(0, span * 1.18)
+    for i, h in enumerate(hours):
+        ax.text(min(h + span * 0.02, span * 1.14), i, f"{h:.1f} h", va="center", fontsize=8, color="#64748b")
+    _style_ax(ax, fig)
+    return fig
+
+
 def _nfp_sawtooth_fig(epoch: datetime, relapses: list, now: datetime):
     """Streak length (seconds) vs time: ramps up, vertical drop on each reset."""
     rel_sorted = sorted(relapses)
@@ -396,10 +484,23 @@ def _render_nfp_live_block():
     now = datetime.now(TIMEZONE)
 
     streak_sec = nfp_current_streak_seconds(epoch, relapses, now)
+    segments = _nfp_segments_data(epoch, relapses, now)
+    longest_sec = max((s["duration_sec"] for s in segments), default=0.0)
+    total_clean_sec = sum(s["duration_sec"] for s in segments)
+
     m1, m2, m3 = st.columns(3)
     m1.metric("Current streak", _format_streak_duration(streak_sec))
     m2.metric("Resets logged", len(relapses))
     m3.metric("Anchor started", epoch.strftime("%b %d, %Y  %-I:%M %p"))
+
+    s1, s2, s3 = st.columns(3)
+    s1.metric("Longest segment", _format_streak_duration(longest_sec))
+    s2.metric("Total on-track time", _format_streak_duration(total_clean_sec))
+    s3.metric("Segments (runs)", len(segments))
+
+    if longest_sec > 0:
+        ratio = min(1.0, streak_sec / longest_sec)
+        st.progress(ratio, text=f"Current streak vs longest: {ratio * 100:.0f}%")
 
     if epoch > now:
         st.info(
@@ -409,12 +510,21 @@ def _render_nfp_live_block():
     st.markdown("---")
     st.subheader("Streak history (live)")
     st.caption(
-        "Y-axis is elapsed seconds in the current segment; vertical lines are resets. "
-        f"The line on the right keeps rising as time passes — updates every 2s · **{now.strftime('%H:%M:%S')}**"
+        "Sawtooth: elapsed seconds in the current segment; the right edge rises until the next reset. "
+        f"Refreshes every 2s · **{now.strftime('%H:%M:%S')}**"
     )
 
     fig = _nfp_sawtooth_fig(epoch, relapses, now)
     st.pyplot(fig, clear_figure=True)
+
+    st.subheader("Other views")
+    st.caption("Same data — timeline shows *when* you were on track; bars compare *how long* each run lasted (hours).")
+
+    c_timeline, c_bars = st.columns(2)
+    with c_timeline:
+        st.pyplot(_nfp_timeline_fig(epoch, relapses, now), clear_figure=True)
+    with c_bars:
+        st.pyplot(_nfp_segment_bars_fig(segments), clear_figure=True)
 
 
 def render_nfp_section():
