@@ -1,4 +1,7 @@
+from typing import Optional
+
 import html
+import hmac
 import streamlit as st
 import pandas as pd
 import psycopg2
@@ -7,6 +10,45 @@ from datetime import date, datetime, timedelta
 import pytz
 
 TIMEZONE = pytz.timezone("America/Los_Angeles")
+
+
+def _get_app_password() -> Optional[str]:
+    try:
+        return str(st.secrets["app"]["password"])
+    except (KeyError, TypeError):
+        try:
+            return str(st.secrets["app_password"])
+        except (KeyError, TypeError):
+            return None
+
+
+def _password_matches(entered: str, expected: str) -> bool:
+    if not expected:
+        return False
+    try:
+        return hmac.compare_digest(entered.encode("utf-8"), expected.encode("utf-8"))
+    except Exception:
+        return False
+
+
+def render_password_gate():
+    st.title("Tracker")
+    st.caption("Enter the app password to continue.")
+    expected = _get_app_password()
+    if not expected:
+        st.error(
+            "Password not configured. Add `[app]` with `password = \"...\"` to `.streamlit/secrets.toml` "
+            "(or `app_password = \"...\"`)."
+        )
+        return
+    with st.form("app_login", clear_on_submit=False):
+        pwd = st.text_input("Password", type="password", key="gate_password", autocomplete="current-password")
+        if st.form_submit_button("Continue"):
+            if _password_matches(pwd, expected):
+                st.session_state["authenticated"] = True
+                st.rerun()
+            else:
+                st.error("Incorrect password.")
 
 
 def get_conn():
@@ -782,6 +824,17 @@ def render_sleep_section():
 
 
 # ── Navigation & page config ──────────────────────────────────────────────────
+st.set_page_config(page_title="Tracker", page_icon=":material/monitoring:", layout="wide")
+
+if not st.session_state.get("authenticated"):
+    render_password_gate()
+    st.stop()
+
+with st.sidebar:
+    if st.button("Log out", key="app_logout"):
+        st.session_state["authenticated"] = False
+        st.rerun()
+
 pg = st.navigation(
     {
         "Tracker": [
@@ -793,8 +846,6 @@ pg = st.navigation(
         ],
     }
 )
-
-st.set_page_config(page_title="Tracker", page_icon=":material/monitoring:", layout="wide")
 
 st.markdown(
     """
