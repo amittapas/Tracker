@@ -225,6 +225,191 @@ def load_reading_data_with_id() -> pd.DataFrame:
     return df
 
 
+# ── NFP (abstinence streak: single timer, relapses reset) ─────────────────────
+
+def _nfp_default_epoch() -> datetime:
+    """Anchor streak at 4:00 PM local (Pacific). If before 4pm today, anchor is today 4pm (streak 0 until then)."""
+    now = datetime.now(TIMEZONE)
+    today_4pm = now.replace(hour=16, minute=0, second=0, microsecond=0)
+    return today_4pm
+
+
+def _ensure_nfp_streak_row():
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM nfp_streak WHERE id = 1")
+            if cur.fetchone() is None:
+                cur.execute(
+                    "INSERT INTO nfp_streak (id, epoch_started_at) VALUES (1, %s)",
+                    (_nfp_default_epoch(),),
+                )
+        conn.commit()
+
+
+def load_nfp_epoch() -> datetime:
+    _ensure_nfp_streak_row()
+    with get_conn() as conn:
+        df = pd.read_sql("SELECT epoch_started_at FROM nfp_streak WHERE id = 1", conn)
+    t = df.iloc[0]["epoch_started_at"]
+    if hasattr(t, "tzinfo") and t.tzinfo is None:
+        t = pytz.utc.localize(t).astimezone(TIMEZONE)
+    elif hasattr(t, "tz_convert"):
+        t = t.tz_convert(TIMEZONE)
+    return t
+
+
+def load_nfp_relapses() -> list:
+    with get_conn() as conn:
+        df = pd.read_sql("SELECT relapsed_at FROM nfp_relapse ORDER BY relapsed_at ASC", conn)
+    if df.empty:
+        return []
+    out = []
+    for x in df["relapsed_at"]:
+        if hasattr(x, "tzinfo") and x.tzinfo is None:
+            x = pytz.utc.localize(x).astimezone(TIMEZONE)
+        elif hasattr(x, "tz_convert"):
+            x = x.tz_convert(TIMEZONE)
+        out.append(x)
+    return out
+
+
+def record_nfp_relapse():
+    now = datetime.now(TIMEZONE)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO nfp_relapse (relapsed_at) VALUES (%s)", (now,))
+        conn.commit()
+
+
+def nfp_current_streak_seconds(epoch: datetime, relapses: list, now: datetime) -> float:
+    """Time since last segment start (epoch or most recent relapse)."""
+    starts = [epoch] + sorted(relapses)
+    last_start = starts[-1]
+    return max(0.0, (now - last_start).total_seconds())
+
+
+def _format_streak_duration(seconds: float) -> str:
+    if seconds <= 0:
+        return "0s"
+    s = int(seconds)
+    days, s = divmod(s, 86400)
+    hours, s = divmod(s, 3600)
+    minutes, s = divmod(s, 60)
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours or days:
+        parts.append(f"{hours}h")
+    if minutes or parts:
+        parts.append(f"{minutes}m")
+    parts.append(f"{s}s")
+    return " ".join(parts)
+
+
+def _ts_local(x) -> pd.Timestamp:
+    t = pd.Timestamp(x)
+    if t.tzinfo is None:
+        return t.tz_localize(TIMEZONE)
+    return t.tz_convert(TIMEZONE)
+
+
+def _nfp_sawtooth_fig(epoch: datetime, relapses: list, now: datetime):
+    """Streak length (seconds) vs time: ramps up, vertical drop on each relapse."""
+    rel_sorted = sorted(relapses)
+    starts = [_ts_local(epoch)] + [_ts_local(r) for r in rel_sorted]
+    now_ts = _ts_local(now)
+    fig, ax = plt.subplots(figsize=(9, 3.8))
+    color = "#7c3aed"
+    fill_a = 0.08
+    drew = False
+
+    for i, seg_start in enumerate(starts):
+        seg_end = starts[i + 1] if i + 1 < len(starts) else now_ts
+        if seg_end <= seg_start:
+            continue
+        n = int((seg_end - seg_start).total_seconds() // 40)
+        n = min(500, max(30, n))
+        ts = pd.date_range(start=seg_start, end=seg_end, periods=n)
+        t0 = seg_start
+        ys = (ts - t0).total_seconds()
+        ax.plot(ts, ys, color=color, linewidth=2.1, solid_capstyle="round")
+        ax.fill_between(ts, ys, color=color, alpha=fill_a)
+        drew = True
+        if i + 1 < len(starts):
+            rnext = starts[i + 1]
+            peak = (rnext - t0).total_seconds()
+            ax.plot([rnext, rnext], [peak, 0.0], color=color, linewidth=2.1, solid_capstyle="round")
+
+    if not drew:
+        ax.text(
+            0.5,
+            0.5,
+            "No streak interval to plot yet (anchor may be in the future).",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+            fontsize=10,
+            color="#64748b",
+        )
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+    ax.set_title("Streak over time (seconds)", fontsize=11, fontweight="bold", color="#1f2937", pad=10, loc="left")
+    ax.set_xlabel("Time", fontsize=9, color="#6b7280")
+    ax.set_ylabel("Current streak (seconds)", fontsize=9, color="#6b7280")
+    _style_ax(ax, fig)
+    return fig
+
+
+def render_nfp_section():
+    st.header("NFP")
+    st.caption(
+        "Track abstinence from porn and masturbation. Your streak is the time since your anchor "
+        f"or your last relapse. Times use **{TIMEZONE.zone}**."
+    )
+
+    epoch = load_nfp_epoch()
+    relapses = load_nfp_relapses()
+    now = datetime.now(TIMEZONE)
+
+    streak_sec = nfp_current_streak_seconds(epoch, relapses, now)
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Current streak", _format_streak_duration(streak_sec))
+    m2.metric("Relapses logged", len(relapses))
+    m3.metric("Anchor started", epoch.strftime("%b %d, %Y  %-I:%M %p"))
+
+    if epoch > now:
+        st.info(
+            f"Streak anchor is **{epoch.strftime('%b %d, %Y  %-I:%M %p')}** — your streak stays at 0 until that time."
+        )
+
+    st.markdown("---")
+
+    with st.form("nfp_relapse_form"):
+        st.markdown("**Relapse** — records this moment and restarts your streak from now (sawtooth drops to zero).")
+        confirm = st.checkbox("I understand this resets my current streak")
+        submitted = st.form_submit_button("Record relapse", type="secondary")
+        if submitted:
+            if not confirm:
+                st.error("Please confirm that you understand this resets your streak.")
+            else:
+                record_nfp_relapse()
+                st.toast("Relapse recorded — streak restarted.", icon="🔄")
+                st.rerun()
+
+    st.markdown("---")
+    st.subheader("Streak history (sawtooth)")
+    st.caption("Y-axis is elapsed seconds in the current segment at each moment; vertical lines are relapses.")
+
+    fig = _nfp_sawtooth_fig(epoch, relapses, now)
+    st.pyplot(fig, clear_figure=True)
+
+    if relapses:
+        with st.expander("Relapse log (newest first)"):
+            rdf = pd.DataFrame({"Relapsed at (local)": [r.strftime("%b %d, %Y  %-I:%M:%S %p") for r in reversed(relapses)]})
+            st.dataframe(rdf, use_container_width=True, hide_index=True)
+
+
 # ── Goals (pushups, running, pages, steps, writing, fasting, passive income) ─
 
 GOAL_METRICS = {
@@ -896,6 +1081,7 @@ pg = st.navigation(
             st.Page(render_sleep_section, title="Sleep", icon=":material/bedtime:"),
             st.Page(render_reading_section, title="Reading", icon=":material/menu_book:"),
             st.Page(render_goals_section, title="Goals", icon=":material/flag:"),
+            st.Page(render_nfp_section, title="NFP", icon=":material/timer:"),
             st.Page(render_graphs_section, title="Trends", icon=":material/bar_chart:"),
         ],
     }
