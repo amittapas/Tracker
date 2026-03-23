@@ -476,9 +476,9 @@ def _nfp_sawtooth_fig(epoch: datetime, relapses: list, now: datetime):
     return fig
 
 
-@st.fragment(run_every=timedelta(seconds=2))
+@st.fragment(run_every=timedelta(minutes=1))
 def _render_nfp_live_block():
-    """Metrics + sawtooth chart; auto-refreshes so the current segment keeps climbing in real time."""
+    """Metrics + charts; fragment reruns every minute so values and the sawtooth update without a full page reload."""
     epoch = load_nfp_epoch()
     relapses = load_nfp_relapses()
     now = datetime.now(TIMEZONE)
@@ -511,7 +511,7 @@ def _render_nfp_live_block():
     st.subheader("Streak history (live)")
     st.caption(
         "Sawtooth: elapsed seconds in the current segment; the right edge rises until the next reset. "
-        f"Refreshes every 2s · **{now.strftime('%H:%M:%S')}**"
+        f"Refreshes every minute · **{now.strftime('%H:%M:%S')}**"
     )
 
     fig = _nfp_sawtooth_fig(epoch, relapses, now)
