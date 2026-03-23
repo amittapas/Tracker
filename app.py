@@ -3,6 +3,7 @@ from typing import Optional
 import html
 import hmac
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import psycopg2
 import matplotlib.pyplot as plt
@@ -29,6 +30,36 @@ def _password_matches(entered: str, expected: str) -> bool:
         return hmac.compare_digest(entered.encode("utf-8"), expected.encode("utf-8"))
     except Exception:
         return False
+
+
+def trigger_celebration():
+    """Call before st.rerun() on successes; confetti plays on the next run."""
+    st.session_state["celebrate"] = True
+
+
+def show_confetti():
+    """Canvas-confetti burst (loads from CDN inside component iframe)."""
+    components.html(
+        """
+        <script>
+        (function () {
+          var s = document.createElement("script");
+          s.src = "https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js";
+          s.onload = function () {
+            try {
+              confetti({ particleCount: 160, spread: 78, origin: { y: 0.58 }, ticks: 280 });
+              setTimeout(function () {
+                confetti({ particleCount: 90, angle: 55, spread: 50, origin: { x: 0, y: 0.68 } });
+                confetti({ particleCount: 90, angle: 125, spread: 50, origin: { x: 1, y: 0.68 } });
+              }, 220);
+            } catch (e) {}
+          };
+          document.head.appendChild(s);
+        })();
+        </script>
+        """,
+        height=0,
+    )
 
 
 def render_password_gate():
@@ -458,7 +489,8 @@ def render_health_section():
                 "steps": int(steps),
             }
             upsert_health_row(entry)
-            st.success(f"Saved entry for {entry_date}.")
+            st.toast(f"Saved entry for {entry_date}.", icon="✅")
+            trigger_celebration()
             st.rerun()
 
     st.subheader("Daily Log")
@@ -546,7 +578,8 @@ def render_reading_section():
                     "book": book.strip(),
                     "end_page": int(end_page),
                 })
-                st.success(f"Logged **{book.strip()}** — page {end_page} on {reading_date}.")
+                st.toast(f"Logged {book.strip()} — page {end_page}", icon="📖")
+                trigger_celebration()
                 st.rerun()
 
     rdf = load_reading_data_with_id()
@@ -637,6 +670,8 @@ def render_goals_section():
         with b1:
             if st.button("Achieved", type="primary", key=f"goal_ok_{metric_key}", use_container_width=True):
                 apply_goal_success(metric_key)
+                st.toast("Nice — target bumped!", icon="🎯")
+                trigger_celebration()
                 st.rerun()
         with b2:
             if st.button("Failed", key=f"goal_fail_{metric_key}", use_container_width=True):
@@ -726,7 +761,8 @@ def render_sleep_section():
         if open_session:
             if st.button("☀️ Waking up", type="primary", use_container_width=True, key="wake_btn"):
                 ts, dur = end_sleep(open_session[0])
-                st.success(f"Woke up at {fmt_time(ts)}. You slept **{fmt_duration(dur)}**.")
+                st.toast(f"You slept {fmt_duration(dur)}", icon="☀️")
+                trigger_celebration()
                 st.rerun()
         else:
             st.button("Waking up", disabled=True, use_container_width=True, key="wake_btn")
@@ -829,6 +865,9 @@ st.set_page_config(page_title="Tracker", page_icon=":material/monitoring:", layo
 if not st.session_state.get("authenticated"):
     render_password_gate()
     st.stop()
+
+if st.session_state.pop("celebrate", False):
+    show_confetti()
 
 with st.sidebar:
     if st.button("Log out", key="app_logout"):
