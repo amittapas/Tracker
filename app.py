@@ -248,6 +248,15 @@ def _ensure_nfp_schema():
                 """
             )
             cur.execute("CREATE INDEX IF NOT EXISTS idx_nfp_relapse_at ON nfp_relapse (relapsed_at)")
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS nfp_urge (
+                  id SERIAL PRIMARY KEY,
+                  logged_at TIMESTAMPTZ NOT NULL
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_nfp_urge_at ON nfp_urge (logged_at)")
         conn.commit()
 
 
@@ -308,6 +317,31 @@ def record_nfp_relapse():
         conn.commit()
 
 
+def load_nfp_urges() -> list:
+    _ensure_nfp_schema()
+    with get_conn() as conn:
+        df = pd.read_sql("SELECT logged_at FROM nfp_urge ORDER BY logged_at ASC", conn)
+    if df.empty:
+        return []
+    out = []
+    for x in df["logged_at"]:
+        if hasattr(x, "tzinfo") and x.tzinfo is None:
+            x = pytz.utc.localize(x).astimezone(TIMEZONE)
+        elif hasattr(x, "tz_convert"):
+            x = x.tz_convert(TIMEZONE)
+        out.append(x)
+    return out
+
+
+def record_nfp_urge():
+    _ensure_nfp_schema()
+    now = datetime.now(TIMEZONE)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO nfp_urge (logged_at) VALUES (%s)", (now,))
+        conn.commit()
+
+
 def nfp_current_streak_seconds(epoch: datetime, relapses: list, now: datetime) -> float:
     """Time since last segment start (epoch or most recent reset)."""
     starts = [epoch] + sorted(relapses)
@@ -340,6 +374,23 @@ def _ts_local(x) -> pd.Timestamp:
     return t.tz_convert(TIMEZONE)
 
 
+def _nfp_streak_value_at(epoch, relapses: list, now, u) -> Optional[float]:
+    """Streak (seconds) at time u within its segment; None if u is outside all segments."""
+    u = _ts_local(u)
+    now_ts = _ts_local(now)
+    rel_sorted = sorted(relapses)
+    starts = [_ts_local(epoch)] + [_ts_local(r) for r in rel_sorted]
+    for i, seg_start in enumerate(starts):
+        if i + 1 < len(starts):
+            bound = starts[i + 1]
+            if seg_start <= u < bound:
+                return max(0.0, (u - seg_start).total_seconds())
+        else:
+            if seg_start <= u <= now_ts:
+                return max(0.0, (u - seg_start).total_seconds())
+    return None
+
+
 def _nfp_segments_data(epoch, relapses: list, now) -> list:
     """Ordered segments (start, end, duration_sec, ongoing)."""
     rel_sorted = sorted(relapses)
@@ -362,8 +413,9 @@ def _nfp_segments_data(epoch, relapses: list, now) -> list:
     return out
 
 
-def _nfp_timeline_fig(epoch, relapses: list, now: datetime):
-    """Single-row calendar view: green spans = clean periods, red ticks = resets."""
+def _nfp_timeline_fig(epoch, relapses: list, now: datetime, urges: Optional[list] = None):
+    """Single-row calendar view: green spans = clean periods, red = resets, amber = urge overcome."""
+    urges = urges or []
     rel_sorted = sorted(relapses)
     starts = [_ts_local(epoch)] + [_ts_local(r) for r in rel_sorted]
     now_ts = _ts_local(now)
@@ -380,13 +432,22 @@ def _nfp_timeline_fig(epoch, relapses: list, now: datetime):
         drew = True
     for r in rel_sorted:
         ax.axvline(r, color="#dc2626", linewidth=2.0, alpha=0.85, linestyle="-")
+    for u in urges:
+        ax.axvline(u, color="#f59e0b", linewidth=2.0, alpha=0.9, linestyle="--")
     if not drew:
         ax.text(0.5, 0.5, "Nothing to show yet.", ha="center", va="center", transform=ax.transAxes, color="#64748b")
         ax.set_xticks([])
         ax.set_yticks([])
     ax.set_ylim(0, 1)
     ax.set_yticks([])
-    ax.set_title("Timeline — green = on track, red line = reset", fontsize=11, fontweight="bold", color="#1f2937", pad=10, loc="left")
+    ax.set_title(
+        "Timeline — green = on track, red = reset, amber dashed = urge overcome",
+        fontsize=11,
+        fontweight="bold",
+        color="#1f2937",
+        pad=10,
+        loc="left",
+    )
     pad = timedelta(hours=1)
     ax.set_xlim(_ts_local(epoch) - pad, now_ts + pad)
     _style_ax(ax, fig)
@@ -428,8 +489,9 @@ def _nfp_segment_bars_fig(segments: list):
     return fig
 
 
-def _nfp_sawtooth_fig(epoch: datetime, relapses: list, now: datetime):
-    """Streak length (seconds) vs time: ramps up, vertical drop on each reset."""
+def _nfp_sawtooth_fig(epoch: datetime, relapses: list, now: datetime, urges: Optional[list] = None):
+    """Streak length (seconds) vs time: ramps up, vertical drop on each reset; amber dots = urge overcome."""
+    urges = urges or []
     rel_sorted = sorted(relapses)
     starts = [_ts_local(epoch)] + [_ts_local(r) for r in rel_sorted]
     now_ts = _ts_local(now)
@@ -455,7 +517,26 @@ def _nfp_sawtooth_fig(epoch: datetime, relapses: list, now: datetime):
             peak = (rnext - t0).total_seconds()
             ax.plot([rnext, rnext], [peak, 0.0], color=color, linewidth=2.1, solid_capstyle="round")
 
-    if not drew:
+    ux, uy = [], []
+    for u in urges:
+        y = _nfp_streak_value_at(epoch, relapses, now, u)
+        if y is not None:
+            ux.append(_ts_local(u))
+            uy.append(y)
+    if ux:
+        ax.scatter(
+            ux,
+            uy,
+            color="#f59e0b",
+            s=70,
+            zorder=6,
+            edgecolors="white",
+            linewidths=1.6,
+            label="Urge overcome",
+        )
+        ax.legend(loc="upper left", fontsize=8, framealpha=0.95, edgecolor="#e5e7eb")
+
+    if not drew and not ux:
         ax.text(
             0.5,
             0.5,
@@ -469,7 +550,7 @@ def _nfp_sawtooth_fig(epoch: datetime, relapses: list, now: datetime):
         ax.set_xticks([])
         ax.set_yticks([])
 
-    ax.set_title("Streak over time (seconds)", fontsize=11, fontweight="bold", color="#1f2937", pad=10, loc="left")
+    ax.set_title("Streak over time (seconds) — amber = urge overcome", fontsize=11, fontweight="bold", color="#1f2937", pad=10, loc="left")
     ax.set_xlabel("Time", fontsize=9, color="#6b7280")
     ax.set_ylabel("Current streak (seconds)", fontsize=9, color="#6b7280")
     _style_ax(ax, fig)
@@ -481,6 +562,7 @@ def _render_nfp_live_block():
     """Metrics + charts; fragment reruns every minute so values and the sawtooth update without a full page reload."""
     epoch = load_nfp_epoch()
     relapses = load_nfp_relapses()
+    urges = load_nfp_urges()
     now = datetime.now(TIMEZONE)
 
     streak_sec = nfp_current_streak_seconds(epoch, relapses, now)
@@ -488,10 +570,11 @@ def _render_nfp_live_block():
     longest_sec = max((s["duration_sec"] for s in segments), default=0.0)
     total_clean_sec = sum(s["duration_sec"] for s in segments)
 
-    m1, m2, m3 = st.columns(3)
+    m1, m2, m3, m4 = st.columns(4)
     m1.metric("Current streak", _format_streak_duration(streak_sec))
     m2.metric("Resets logged", len(relapses))
-    m3.metric("Anchor started", epoch.strftime("%b %d, %Y  %-I:%M %p"))
+    m3.metric("Urges overcome", len(urges))
+    m4.metric("Anchor started", epoch.strftime("%b %d, %Y  %-I:%M %p"))
 
     s1, s2, s3 = st.columns(3)
     s1.metric("Longest segment", _format_streak_duration(longest_sec))
@@ -510,11 +593,11 @@ def _render_nfp_live_block():
     st.markdown("---")
     st.subheader("Streak history (live)")
     st.caption(
-        "Sawtooth: elapsed seconds in the current segment; the right edge rises until the next reset. "
+        "Sawtooth: elapsed seconds in the current segment; amber markers = you logged an urge and overcame it. "
         f"Refreshes every minute · **{now.strftime('%H:%M:%S')}**"
     )
 
-    fig = _nfp_sawtooth_fig(epoch, relapses, now)
+    fig = _nfp_sawtooth_fig(epoch, relapses, now, urges=urges)
     st.pyplot(fig, clear_figure=True)
 
     st.subheader("Other views")
@@ -522,7 +605,7 @@ def _render_nfp_live_block():
 
     c_timeline, c_bars = st.columns(2)
     with c_timeline:
-        st.pyplot(_nfp_timeline_fig(epoch, relapses, now), clear_figure=True)
+        st.pyplot(_nfp_timeline_fig(epoch, relapses, now, urges=urges), clear_figure=True)
     with c_bars:
         st.pyplot(_nfp_segment_bars_fig(segments), clear_figure=True)
 
@@ -546,14 +629,25 @@ def render_nfp_section():
                 st.toast("Reset recorded — streak restarted.", icon="🔄")
                 st.rerun()
 
+    st.caption("Log when an urge hits — it marks the charts (you overcame it; this does **not** reset your streak).")
+    if st.button("Urge up", type="primary", key="nfp_urge_up", use_container_width=False):
+        record_nfp_urge()
+        st.toast("Urge logged — stay strong.", icon="💪")
+        st.rerun()
+
     st.markdown("---")
     _render_nfp_live_block()
 
     relapses = load_nfp_relapses()
+    urges_log = load_nfp_urges()
     if relapses:
         with st.expander("Reset log (newest first)"):
             rdf = pd.DataFrame({"Reset at (local)": [r.strftime("%b %d, %Y  %-I:%M:%S %p") for r in reversed(relapses)]})
             st.dataframe(rdf, use_container_width=True, hide_index=True)
+    if urges_log:
+        with st.expander("Urge log (newest first)"):
+            udf = pd.DataFrame({"Logged at (local)": [u.strftime("%b %d, %Y  %-I:%M:%S %p") for u in reversed(urges_log)]})
+            st.dataframe(udf, use_container_width=True, hide_index=True)
 
 
 # ── Goals (pushups, running, pages, steps, writing, fasting, passive income) ─
