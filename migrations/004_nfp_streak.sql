@@ -1,4 +1,4 @@
--- No-fap / no-porn streak: fixed epoch (first 4pm anchor) + relapse events.
+-- NFP streak: fixed epoch (first 4pm anchor) + reset events.
 CREATE TABLE IF NOT EXISTS nfp_streak (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   epoch_started_at TIMESTAMPTZ NOT NULL

@@ -225,7 +225,7 @@ def load_reading_data_with_id() -> pd.DataFrame:
     return df
 
 
-# ── NFP (abstinence streak: single timer, relapses reset) ─────────────────────
+# ── NFP (streak timer: anchor + resets) ───────────────────────────────────────
 
 def _nfp_default_epoch() -> datetime:
     """Anchor streak at 4:00 PM local (Pacific). If before 4pm today, anchor is today 4pm (streak 0 until then)."""
@@ -282,7 +282,7 @@ def record_nfp_relapse():
 
 
 def nfp_current_streak_seconds(epoch: datetime, relapses: list, now: datetime) -> float:
-    """Time since last segment start (epoch or most recent relapse)."""
+    """Time since last segment start (epoch or most recent reset)."""
     starts = [epoch] + sorted(relapses)
     last_start = starts[-1]
     return max(0.0, (now - last_start).total_seconds())
@@ -314,7 +314,7 @@ def _ts_local(x) -> pd.Timestamp:
 
 
 def _nfp_sawtooth_fig(epoch: datetime, relapses: list, now: datetime):
-    """Streak length (seconds) vs time: ramps up, vertical drop on each relapse."""
+    """Streak length (seconds) vs time: ramps up, vertical drop on each reset."""
     rel_sorted = sorted(relapses)
     starts = [_ts_local(epoch)] + [_ts_local(r) for r in rel_sorted]
     now_ts = _ts_local(now)
@@ -364,8 +364,8 @@ def _nfp_sawtooth_fig(epoch: datetime, relapses: list, now: datetime):
 def render_nfp_section():
     st.header("NFP")
     st.caption(
-        "Track abstinence from porn and masturbation. Your streak is the time since your anchor "
-        f"or your last relapse. Times use **{TIMEZONE.zone}**."
+        "Your streak is how long you’ve stayed on track since the anchor time or your last reset. "
+        f"Times use **{TIMEZONE.zone}**."
     )
 
     epoch = load_nfp_epoch()
@@ -375,7 +375,7 @@ def render_nfp_section():
     streak_sec = nfp_current_streak_seconds(epoch, relapses, now)
     m1, m2, m3 = st.columns(3)
     m1.metric("Current streak", _format_streak_duration(streak_sec))
-    m2.metric("Relapses logged", len(relapses))
+    m2.metric("Resets logged", len(relapses))
     m3.metric("Anchor started", epoch.strftime("%b %d, %Y  %-I:%M %p"))
 
     if epoch > now:
@@ -386,27 +386,27 @@ def render_nfp_section():
     st.markdown("---")
 
     with st.form("nfp_relapse_form"):
-        st.markdown("**Relapse** — records this moment and restarts your streak from now (sawtooth drops to zero).")
+        st.markdown("**Reset streak** — records this moment and restarts your streak from now (the chart drops to zero).")
         confirm = st.checkbox("I understand this resets my current streak")
-        submitted = st.form_submit_button("Record relapse", type="secondary")
+        submitted = st.form_submit_button("Record reset", type="secondary")
         if submitted:
             if not confirm:
                 st.error("Please confirm that you understand this resets your streak.")
             else:
                 record_nfp_relapse()
-                st.toast("Relapse recorded — streak restarted.", icon="🔄")
+                st.toast("Reset recorded — streak restarted.", icon="🔄")
                 st.rerun()
 
     st.markdown("---")
     st.subheader("Streak history (sawtooth)")
-    st.caption("Y-axis is elapsed seconds in the current segment at each moment; vertical lines are relapses.")
+    st.caption("Y-axis is elapsed seconds in the current segment at each moment; vertical lines are resets.")
 
     fig = _nfp_sawtooth_fig(epoch, relapses, now)
     st.pyplot(fig, clear_figure=True)
 
     if relapses:
-        with st.expander("Relapse log (newest first)"):
-            rdf = pd.DataFrame({"Relapsed at (local)": [r.strftime("%b %d, %Y  %-I:%M:%S %p") for r in reversed(relapses)]})
+        with st.expander("Reset log (newest first)"):
+            rdf = pd.DataFrame({"Reset at (local)": [r.strftime("%b %d, %Y  %-I:%M:%S %p") for r in reversed(relapses)]})
             st.dataframe(rdf, use_container_width=True, hide_index=True)
 
 
