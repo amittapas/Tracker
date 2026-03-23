@@ -603,20 +603,20 @@ def render_reading_section():
 
 
 def render_goals_section():
-    # Amber / teal “night mode” theme — HTML cards so we do not restyle global st.metric on other pages
+    # Light theme — HTML cards (does not affect global st.metric on other pages)
     st.markdown(
         """
-        <div style="background: linear-gradient(135deg, #1c1917 0%, #292524 50%, #1c1917 100%);
-                    border: 1px solid rgba(245, 158, 11, 0.28);
+        <div style="background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+                    border: 1px solid #e2e8f0;
                     border-radius: 18px;
                     padding: 1.4rem 1.6rem;
                     margin-bottom: 1.35rem;
-                    box-shadow: 0 10px 40px rgba(0,0,0,0.4);">
-            <h2 style="margin:0; color:#fef3c7; font-family:system-ui,sans-serif; font-size:1.65rem;
+                    box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06);">
+            <h2 style="margin:0; color:#0f172a; font-family:system-ui,sans-serif; font-size:1.65rem;
                        font-weight:700; letter-spacing:-0.02em;">Goals</h2>
-            <p style="margin:0.55rem 0 0 0; color:#a8a29e; font-size:0.92rem; line-height:1.5;">
-                <span style="color:#fcd34d;font-weight:600;">Achieved</span> bumps your next target.
-                <span style="color:#94a3b8;font-weight:600;">Failed</span> keeps it where it is.
+            <p style="margin:0.55rem 0 0 0; color:#64748b; font-size:0.92rem; line-height:1.5;">
+                <span style="color:#2563eb;font-weight:600;">Achieved</span> bumps your next target.
+                <span style="color:#64748b;font-weight:600;">Failed</span> keeps it where it is.
             </p>
         </div>
         """,
@@ -636,29 +636,29 @@ def render_goals_section():
 
         st.markdown(
             f"""
-            <div style="background: linear-gradient(165deg, #292524 0%, #1c1917 100%);
-                        border: 1px solid rgba(20, 184, 166, 0.22);
+            <div style="background: #ffffff;
+                        border: 1px solid #e2e8f0;
                         border-radius: 14px;
                         padding: 0.95rem 1.15rem 1rem;
                         margin-bottom: 0.35rem;
-                        box-shadow: 0 4px 18px rgba(0,0,0,0.35);">
-                <div style="color:#fcd34d; font-size:0.72rem; font-weight:700; text-transform:uppercase;
+                        box-shadow: 0 2px 12px rgba(15, 23, 42, 0.06);">
+                <div style="color:#2563eb; font-size:0.72rem; font-weight:700; text-transform:uppercase;
                             letter-spacing:0.09em;">{lbl}</div>
-                <div style="color:#78716c; font-size:0.8rem; margin-top:0.3rem;">{cap}</div>
+                <div style="color:#64748b; font-size:0.8rem; margin-top:0.3rem;">{cap}</div>
                 <div style="display:flex; gap:0.85rem; margin-top:0.85rem; flex-wrap:wrap;">
-                    <div style="flex:1; min-width:120px; background: rgba(15,23,42,0.5);
+                    <div style="flex:1; min-width:120px; background: #f8fafc;
                                 border-radius: 10px; padding: 0.65rem 0.85rem;
-                                border: 1px solid rgba(245, 158, 11, 0.18);">
-                        <div style="color:#a8a29e; font-size:0.68rem; text-transform:uppercase;
+                                border: 1px solid #e2e8f0;">
+                        <div style="color:#64748b; font-size:0.68rem; text-transform:uppercase;
                                     letter-spacing:0.07em;">Next target</div>
-                        <div style="color:#fef3c7; font-size:1.28rem; font-weight:700; margin-top:0.15rem;">{vt}</div>
+                        <div style="color:#0f172a; font-size:1.28rem; font-weight:700; margin-top:0.15rem;">{vt}</div>
                     </div>
-                    <div style="flex:1; min-width:120px; background: rgba(15,23,42,0.5);
+                    <div style="flex:1; min-width:120px; background: #f0fdfa;
                                 border-radius: 10px; padding: 0.65rem 0.85rem;
-                                border: 1px solid rgba(20, 184, 166, 0.22);">
-                        <div style="color:#a8a29e; font-size:0.68rem; text-transform:uppercase;
+                                border: 1px solid #99f6e4;">
+                        <div style="color:#64748b; font-size:0.68rem; text-transform:uppercase;
                                     letter-spacing:0.07em;">Current max</div>
-                        <div style="color:#5eead4; font-size:1.28rem; font-weight:700; margin-top:0.15rem;">{vm}</div>
+                        <div style="color:#0d9488; font-size:1.28rem; font-weight:700; margin-top:0.15rem;">{vm}</div>
                     </div>
                 </div>
             </div>
@@ -890,12 +890,13 @@ st.markdown(
     """
     <style>
     .block-container { max-width: 1000px; padding-top: 2rem; }
+    .stApp { background-color: #f8fafc; }
     div[data-testid="stMetric"] {
         background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
         border: 1px solid #e2e8f0;
         border-radius: 14px;
         padding: 14px 18px;
-        box-shadow: 0 2px 8px rgba(0,0,0,.04);
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
     }
     div[data-testid="stMetric"] label { color: #64748b !important; font-size: 13px !important; }
     div[data-testid="stMetric"] [data-testid="stMetricValue"] { color: #0f172a !important; }
